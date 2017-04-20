@@ -76,7 +76,7 @@ def fetch_jrcacquis(langs=None, data_dir=None, years=None, ignore_unclassified=T
             print("downloading language-specific dataset (once and for all) into %s" % data_dir)
             DOWNLOAD_URL = join(DOWNLOAD_URL_BASE, file_name)
             download_file(DOWNLOAD_URL, archive_path)
-            print("untarring dataset...")
+            print("\nuntarring dataset...")
             tarfile.open(archive_path, 'r:gz').extractall(data_dir)
 
         documents_dir = join(data_dir, l)
