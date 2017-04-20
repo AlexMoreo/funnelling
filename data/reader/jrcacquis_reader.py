@@ -1,25 +1,26 @@
 from __future__ import print_function
 import os
-from os import listdir
-from os.path import isdir, isfile, join
+from os.path import join
 import tarfile
 import xml.etree.ElementTree as ET
-from sklearn.externals.six.moves import urllib
 from sklearn.datasets import get_data_home
 import cPickle as pickle
+from util.file import download_file, list_dirs, list_files
 
 LANGS = ['bg','cs','da','de','el','en','es','et','fi','fr','hu','it','lt','lv','mt','nl','pl','pt','ro','sk','sl','sv']
 
 class JRCAcquis_Document:
     def __init__(self, id, name, lang, year, head, body, categories):
         self.id = id
-        self.name = name
+        self.parallel_id = name
         self.lang = lang
         self.year = year
-        self.head = head
-        self.body = body
+        self.text = body if not head else head + "\n" + body
         self.categories = categories
 
+# this is a workaround... for some reason, acutes are codified in a non-standard manner in titles
+# however, it seems that the title is often appearing as the first paragraph in the text/body (with
+# standard codification), so it might be preferable not to read the header after all
 def proc_acute(text):
     for ch in ['a','e','i','o','u']:
         text = text.replace('%'+ch+'acute%',ch)
@@ -48,27 +49,7 @@ def parse_document(file, year, head=False):
 
     return JRCAcquis_Document(id=doc_id, name=doc_name, lang=doc_lang, year=year, head=doc_head, body=doc_body, categories=doc_categories)
 
-def download_file(url, archive_filename):
-    def progress(blocknum, bs, size):
-        total_sz_mb = '%.2f MB' % (size / 1e6)
-        current_sz_mb = '%.2f MB' % ((blocknum * bs) / 1e6)
-        print('\rdownloaded %s / %s' % (current_sz_mb, total_sz_mb), end='')
-    print("Downloading %s" % url)
-    urllib.request.urlretrieve(url, filename=archive_filename, reporthook=progress)
-
-
-def ls(dir, typecheck):
-    el = [f for f in listdir(dir) if typecheck(join(dir, f))]
-    el.sort()
-    return el
-
-def list_dirs(dir):
-    return ls(dir, typecheck=isdir)
-
-def list_files(dir):
-    return ls(dir, typecheck=isfile)
-
-def read_jrcacquis(langs=None, data_dir=None, years=None, ignore_unclassified=True):
+def fetch_jrcacquis(langs=None, data_dir=None, years=None, ignore_unclassified=True):
     if not langs:
         langs = LANGS
     else:
@@ -83,9 +64,9 @@ def read_jrcacquis(langs=None, data_dir=None, years=None, ignore_unclassified=Tr
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
 
-
-    request = {l:[] for l in langs}
+    request = []
     DOWNLOAD_URL_BASE = 'http://optima.jrc.it/Acquis/JRC-Acquis.3.0/corpus/'
+    total_read = 0
     for l in langs:
 
         file_name = 'jrc-'+l+'.tgz'
@@ -126,14 +107,16 @@ def read_jrcacquis(langs=None, data_dir=None, years=None, ignore_unclassified=Tr
                     print('\r\tfrom %s: completed 100%% read %d documents (discarded %d without categories)\n' % (year_dir, i+1, empty), end='')
                     print("Pickling object for future runs in %s" % pickle_name)
                     pickle.dump(l_y_documents, open(pickle_name, 'wb'), pickle.HIGHEST_PROTOCOL)
-                request[l].append(l_y_documents)
+                request += l_y_documents
         print("Read %d documents for language %s" % (read, l))
+        total_read += read
+    print("Read %d documents in total" % (total_read))
     return request
 
+def __main__():
 
-#parse_document(file_ex)
-storage_path = "/media/moreo/1TB Volume/Datasets/Multilingual/JRC_Acquis_v3"
+    storage_path = "/media/moreo/1TB Volume/Datasets/Multilingual/JRC_Acquis_v3"
 
-read_jrcacquis(langs=['it','en'], data_dir=storage_path, years=[2004,2005,2006])
+    fetch_jrcacquis(langs=['it', 'en'], data_dir=storage_path, years=[2004, 2005, 2006])
 
 
