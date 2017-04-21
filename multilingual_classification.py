@@ -2,7 +2,10 @@ from data.reader.jrcacquis_reader import fetch_jrcacquis, JRCAcquis_Document
 from sklearn.feature_extraction.text import TfidfVectorizer
 import os
 import cPickle as pickle
-
+from sklearn.svm import SVC
+import numpy as np
+from scipy import stats
+from scipy.spatial.distance import cdist
 
 def split_data(data, train_years, test_years):
     train = []
@@ -27,6 +30,10 @@ def show_classification_scheme(Y):
     print "num classes", len(class_count)
     print class_count
 
+class SVM_kendal:
+    def __init__(self, **kwargs):
+        kendalltau_kernel = lambda X,W: cdist(X, W, lambda u,v: stats.kendalltau(u, v)[0])
+        self.svm = SVC(kernel=kendalltau_kernel, **kwargs)
 
 train_years = [2005]
 test_years  = [2006]

@@ -20,7 +20,7 @@ class JRCAcquis_Document:
 
 # this is a workaround... for some reason, acutes are codified in a non-standard manner in titles
 # however, it seems that the title is often appearing as the first paragraph in the text/body (with
-# standard codification), so it might be preferable not to read the header after all
+# standard codification), so it might be preferable not to read the header after all (as here by default)
 def proc_acute(text):
     for ch in ['a','e','i','o','u']:
         text = text.replace('%'+ch+'acute%',ch)
