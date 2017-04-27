@@ -10,6 +10,7 @@ def download_file(url, archive_filename):
         print('\rdownloaded %s / %s' % (current_sz_mb, total_sz_mb), end='')
     print("Downloading %s" % url)
     urllib.request.urlretrieve(url, filename=archive_filename, reporthook=progress)
+    print("")
 
 def ls(dir, typecheck):
     el = [f for f in listdir(dir) if typecheck(join(dir, f))]
