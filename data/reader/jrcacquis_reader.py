@@ -11,6 +11,37 @@ from rdflib.namespace import RDF, SKOS
 from rdflib import URIRef
 import zipfile
 
+"""
+bg = Bulgarian
+cs = Czech
+da = Danish
+de = German
+el = Greek
+en = English
+es = Spanish
+et = Estonian
+fi = Finnish
+fr = French
+hu = Hungarian
+it = Italian
+lt = Lithuanian
+lv = Latvian
+nl = Dutch
+mt = Maltese
+pl = Polish
+pt = Portuguese
+ro = Romanian
+sk = Slovak
+sl = Slovene
+sv = Swedish
+"""
+
+#top 10 languages in wikipedia order by the number of articles
+LANGS_10_MOST_WIKI = ['en','fr','sv','de','es','it','pt','nl','pl','ro']
+
+#danish dutch english finnish french german hungarian italian norwegian porter portuguese romanian russian spanish swedish
+LANGS_WITH_NLTK_STEMMING = ['da', 'nl', 'en', 'fi', 'fr', 'de', 'hu', 'it', 'pt', 'ro', 'es', 'sv']
+
 LANGS = ['bg','cs','da','de','el','en','es','et','fi','fr','hu','it','lt','lv','mt','nl','pl','pt','ro','sk','sl','sv']
 
 class JRCAcquis_Document:
@@ -128,14 +159,19 @@ def fetch_jrcacquis(langs=None, data_dir=None, years=None, ignore_unclassified=T
                     all_documents = list_files(year_dir)
                     empty = 0
                     for i,doc_file in enumerate(all_documents):
-                        jrc_doc = parse_document(join(year_dir, doc_file), year)
-                        if not ignore_unclassified or jrc_doc.categories:
+                        try:
+                            jrc_doc = parse_document(join(year_dir, doc_file), year)
+                        except ValueError:
+                            jrc_doc = None
+                            empty += 1
+
+                        if jrc_doc and (not ignore_unclassified or jrc_doc.categories):
                             l_y_documents.append(jrc_doc)
                         else: empty += 1
-                        if (i+1) % (len(all_documents)/50) == 0:
+                        if len(all_documents)>50 and ((i+1) % (len(all_documents)/50) == 0):
                             print('\r\tfrom %s: completed %d%%' % (year_dir, int((i+1)*100.0/len(all_documents))), end='')
                         read+=1
-                    print('\r\tfrom %s: completed 100%% read %d documents (discarded %d without categories)\n' % (year_dir, i+1, empty), end='')
+                    print('\r\tfrom %s: completed 100%% read %d documents (discarded %d without categories or empty fields)\n' % (year_dir, i+1, empty), end='')
                     print("Pickling object for future runs in %s" % pickle_name)
                     pickle.dump(l_y_documents, open(pickle_name, 'wb'), pickle.HIGHEST_PROTOCOL)
                 request += l_y_documents
@@ -190,7 +226,7 @@ if __name__ == "__main__":
     storage_path = "/media/moreo/1TB Volume/Datasets/Multilingual/JRC_Acquis_v3"
 
     cat_list = inspect_eurovoc(storage_path, 'eurovoc_in_skos_core_concepts.rdf', pickle_name="broadest_concepts.pickle")
-    request = fetch_jrcacquis(langs=['es', 'it', 'en'], data_dir=storage_path, years=[2004, 2005, 2006], cat_filter=cat_list, cat_threshold=30)
+    request = fetch_jrcacquis(langs=['ro'], data_dir=storage_path, years=[2001, 2002, 2003, 2004, 2005, 2006], cat_filter=cat_list, cat_threshold=30)
 
     print("request length: %d" % len(request))
 

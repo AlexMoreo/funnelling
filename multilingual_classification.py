@@ -48,7 +48,9 @@ for lang in langs:
         print("unpickling %s" % pickle_name)
         ((trX, trY), (teX, teY)) = pickle.load(open(pickle_name, 'rb'))
     else:
-        raw_data = fetch_jrcacquis(langs=lang, data_dir=data, years=train_years + test_years)
+        raw_data = fetch_jrcacquis(langs=lang, data_dir=data, years=train_years + test_years, cat_filter=[4,8,10,12,16])
+        print "out!"
+        sys.exit()
         train, test = split_data(raw_data, train_years, test_years)
         print("processing %d documents for language <%s>" % (len(train) + len(test), lang))
 
