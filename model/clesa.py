@@ -1,7 +1,7 @@
 import numpy as np
 import sklearn
 
-class CLESA:
+class CLESA(object):
 
     supported_similarity = ['dot', 'cosine']
 
@@ -39,7 +39,7 @@ class CLESA:
 
         return np.vstack(_clesaX)
 
-    def fit_transform(self, lX, lW):
+    def fit_transform(self, lW, lX):
         self.fit(lW)
         return self.transform(lX)
 

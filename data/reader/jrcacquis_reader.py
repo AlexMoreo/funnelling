@@ -37,11 +37,11 @@ sv = Swedish
 """
 
 #top 10 languages in wikipedia order by the number of articles
-LANGS_10_MOST_WIKI = ['en','fr','sv','de','es','it','pt','nl','pl','ro']
+#LANGS_10_MOST_WIKI = ['en','fr','sv','de','es','it','pt','nl','pl','ro']
 
-#danish dutch english finnish french german hungarian italian norwegian porter portuguese romanian russian spanish swedish
-LANGS_WITH_NLTK_STEMMING = ['da', 'nl', 'en', 'fi', 'fr', 'de', 'hu', 'it', 'pt', 'ro', 'es', 'sv']
 
+
+#all languages in JRC-acquis v3
 LANGS = ['bg','cs','da','de','el','en','es','et','fi','fr','hu','it','lt','lv','mt','nl','pl','pt','ro','sk','sl','sv']
 
 class JRCAcquis_Document:
@@ -85,7 +85,7 @@ def parse_document(file, year, head=False):
     return JRCAcquis_Document(id=doc_id, name=doc_name, lang=doc_lang, year=year, head=doc_head, body=doc_body, categories=doc_categories)
 
 #filters out documents which do not contain any category in the cat_filter list
-def filter_by_category(doclist, cat_filter):
+def _filter_by_category(doclist, cat_filter):
     if not isinstance(cat_filter, frozenset):
         cat_filter = frozenset(cat_filter)
     filtered = []
@@ -94,12 +94,14 @@ def filter_by_category(doclist, cat_filter):
         if doc.categories:
             doc.categories.sort()
             filtered.append(doc)
-            #print("Categories %s: %s" % (doc.categories, doc.text))
     print("filtered %d documents out without categories in the filter list" % (len(doclist) - len(filtered)))
     return filtered
 
 #filters out categories with less than cat_threshold documents (and filters documents containing those categories)
-def filter_by_frequency(doclist, cat_threshold):
+def _filter_by_frequency(doclist, cat_threshold):
+    if cat_threshold == 0:
+        return doclist, cat_threshold
+
     cat_count = {}
     for d in doclist:
         for c in d.categories:
@@ -108,10 +110,11 @@ def filter_by_frequency(doclist, cat_threshold):
             cat_count[c] += 1
 
     freq_categories = [cat for cat,count in cat_count.items() if count>cat_threshold]
-    return filter_by_category(doclist, freq_categories)
+    freq_categories.sort()
+    return _filter_by_category(doclist, freq_categories), freq_categories
 
 
-def fetch_jrcacquis(langs=None, data_dir=None, years=None, ignore_unclassified=True, cat_filter=None, cat_threshold=0):
+def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=True, cat_filter=None, cat_threshold=0):
     if not langs:
         langs = LANGS
     else:
@@ -120,11 +123,11 @@ def fetch_jrcacquis(langs=None, data_dir=None, years=None, ignore_unclassified=T
             if l not in LANGS:
                 raise ValueError('Language %s is not among the valid languages in JRC-Acquis v3' % l)
 
-    if not data_dir:
-        data_dir = get_data_home()
+    if not data_path:
+        data_path = get_data_home()
 
-    if not os.path.exists(data_dir):
-        os.mkdir(data_dir)
+    if not os.path.exists(data_path):
+        os.mkdir(data_path)
 
     request = []
     DOWNLOAD_URL_BASE = 'http://optima.jrc.it/Acquis/JRC-Acquis.3.0/corpus/'
@@ -132,16 +135,16 @@ def fetch_jrcacquis(langs=None, data_dir=None, years=None, ignore_unclassified=T
     for l in langs:
 
         file_name = 'jrc-'+l+'.tgz'
-        archive_path = join(data_dir, file_name)
+        archive_path = join(data_path, file_name)
 
         if not os.path.exists(archive_path):
-            print("downloading language-specific dataset (once and for all) into %s" % data_dir)
+            print("downloading language-specific dataset (once and for all) into %s" % data_path)
             DOWNLOAD_URL = join(DOWNLOAD_URL_BASE, file_name)
             download_file(DOWNLOAD_URL, archive_path)
-            print("\nuntarring dataset...")
-            tarfile.open(archive_path, 'r:gz').extractall(data_dir)
+            print("untarring dataset...")
+            tarfile.open(archive_path, 'r:gz').extractall(data_path)
 
-        documents_dir = join(data_dir, l)
+        documents_dir = join(data_path, l)
 
         print("Reading documents...")
         read = 0
@@ -149,7 +152,7 @@ def fetch_jrcacquis(langs=None, data_dir=None, years=None, ignore_unclassified=T
             year = int(dir)
             if years==None or year in years:
                 year_dir = join(documents_dir,dir)
-                pickle_name = join(data_dir, 'jrc_' + l + '_' + dir + '.pickle')
+                pickle_name = join(data_path, 'jrc_' + l + '_' + dir + '.pickle')
                 if os.path.exists(pickle_name):
                     print("loading from file %s" % pickle_name)
                     l_y_documents = pickle.load(open(pickle_name, "rb"))
@@ -172,34 +175,34 @@ def fetch_jrcacquis(langs=None, data_dir=None, years=None, ignore_unclassified=T
                             print('\r\tfrom %s: completed %d%%' % (year_dir, int((i+1)*100.0/len(all_documents))), end='')
                         read+=1
                     print('\r\tfrom %s: completed 100%% read %d documents (discarded %d without categories or empty fields)\n' % (year_dir, i+1, empty), end='')
-                    print("Pickling object for future runs in %s" % pickle_name)
+                    print("\t\t(Pickling object for future runs in %s)" % pickle_name)
                     pickle.dump(l_y_documents, open(pickle_name, 'wb'), pickle.HIGHEST_PROTOCOL)
                 request += l_y_documents
-        print("Read %d documents for language %s" % (read, l))
+        print("Read %d documents for language %s\n" % (read, l))
         total_read += read
     print("Read %d documents in total" % (total_read))
     if cat_filter:
-        request = filter_by_category(request, cat_filter)
-        request = filter_by_frequency(request, cat_threshold)
-    return request
+        request = _filter_by_category(request, cat_filter)
+        request, final_cats = _filter_by_frequency(request, cat_threshold)
+    return request, final_cats
 
-def inspect_eurovoc(path, filename, pickle_name=None,
+def inspect_eurovoc(data_path, eurovoc_skos_core_concepts_filename='eurovoc_in_skos_core_concepts.rdf', pickle_name=None,
                     eurovoc_url="http://publications.europa.eu/mdr/resource/thesaurus/eurovoc-20160630-0/skos/eurovoc_in_skos_core_concepts.zip",
                     select="broadest"):
     if pickle_name:
-        fullpath_pickle = join(path, pickle_name)
+        fullpath_pickle = join(data_path, pickle_name)
         if os.path.exists(fullpath_pickle):
             print("Pickled object found in %s. Loading it." % fullpath_pickle)
             return pickle.load(open(fullpath_pickle,'rb'))
 
 
-    fullpath = join(path, filename)
+    fullpath = join(data_path, eurovoc_skos_core_concepts_filename)
     if not os.path.exists(fullpath):
-        print("Path %s does not exist. Trying to download the skos EuroVoc file from %s" % (path, eurovoc_url))
-        download_file(eurovoc_url, path+'.zip')
+        print("Path %s does not exist. Trying to download the skos EuroVoc file from %s" % (data_path, eurovoc_url))
+        download_file(eurovoc_url, data_path + '.zip')
         print("Unzipping file...")
-        zipped = zipfile.ZipFile(path+'.zip', 'r')
-        zipped.extract("eurovoc_in_skos_core_concepts.rdf", path)
+        zipped = zipfile.ZipFile(data_path + '.zip', 'r')
+        zipped.extract("eurovoc_in_skos_core_concepts.rdf", data_path)
         zipped.close()
 
     print("Parsing %s" %fullpath)
@@ -226,7 +229,7 @@ if __name__ == "__main__":
     storage_path = "/media/moreo/1TB Volume/Datasets/Multilingual/JRC_Acquis_v3"
 
     cat_list = inspect_eurovoc(storage_path, 'eurovoc_in_skos_core_concepts.rdf', pickle_name="broadest_concepts.pickle")
-    request = fetch_jrcacquis(langs=['ro'], data_dir=storage_path, years=[2001, 2002, 2003, 2004, 2005, 2006], cat_filter=cat_list, cat_threshold=30)
+    request = fetch_jrcacquis(langs=['ro'], data_path=storage_path, years=[2001, 2002, 2003, 2004, 2005, 2006], cat_filter=cat_list, cat_threshold=30)
 
     print("request length: %d" % len(request))
 
