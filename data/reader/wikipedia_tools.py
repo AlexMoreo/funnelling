@@ -9,7 +9,7 @@ from ijson.common import parse
 from ijson.common import ObjectBuilder
 from ijson.common import items
 import cPickle as pickle
-from util.file import list_dirs, list_files
+from util.file import list_dirs, list_files, makedirs_if_not_exist
 from itertools import islice
 import re
 from xml.sax.saxutils import escape
@@ -128,7 +128,7 @@ def extract_multilingual_titles(data_dir, langs, policy="IN_ALL_LANGS", return_b
         multiling_titles = {}
         inv_dict = {lang:{} for lang in langs}
 
-        def process_entry(last):
+        def process_entry(last, fo):
             id = last["id"]
             if id in multiling_titles:
                 raise ValueError("id <%s> already indexed" % id)
@@ -145,19 +145,19 @@ def extract_multilingual_titles(data_dir, langs, policy="IN_ALL_LANGS", return_b
                     if title in inv_dict[lang]:
                         inv_dict[lang][title].append(id)
                     inv_dict[lang][title] = [id]
+                fo.write((id+'\t'+'\t'.join([lang+':'+multiling_titles[id][lang] for lang in titles.keys()])+'\n').encode('utf-8'))
 
         _open = BZ2File if latest_all_json_file.endswith(".bz2") else open
-        with _open(latest_all_json_file, 'r', buffering=1024*1024*16) as fi:
+        with _open(latest_all_json_file, 'r', buffering=1024*1024*16) as fi, \
+                open(join(data_dir,pickle_prefix+".simple.txt"),'w') as fo:
             builder = ObjectBuilder()
             completed = 0
             for event, value in ijson.basic_parse(fi, buf_size=1024*1024*16):
-                builder.event(event, value)
-                if len(builder.value)>1:
-                    process_entry(builder.value.pop(0))
-
+                 builder.event(event, value)
+                 if len(builder.value)>1:
+                    process_entry(builder.value.pop(0), fo)
                     completed += 1
-                    if completed % 1000==0:
-                        print("\rCompleted %d" % completed, end="")
+                    print("\rCompleted %d\ttitles %d" % (completed,len(multiling_titles)), end="")
             print("")
 
             #process the last entry
@@ -169,6 +169,52 @@ def extract_multilingual_titles(data_dir, langs, policy="IN_ALL_LANGS", return_b
             print("Done")
 
         return (multiling_titles, inv_dict) if return_both else inv_dict
+
+def simplify_multilingual_titles(data_dir, langs, policy="IN_ALL_LANGS"):
+    json_file = "latest-all.json.bz2"  # in https://dumps.wikimedia.org/wikidatawiki/entities/latest-all.json.bz2
+    latest_all_json_file = join(data_dir,json_file)
+
+    if policy not in policies:
+        raise ValueError("Policy %s not supported." % policy)
+    else:
+        print("extracting multilingual titles with policy %s (%s)" % (policy,' '.join(langs)))
+
+    lang_prefix = list(langs)
+    lang_prefix.sort()
+    simple_titles_path = join(data_dir, "extraction_" + "_".join(lang_prefix) + "." + policy)
+
+
+    def process_entry(last, fo):
+        global written
+        id = last["id"]
+        titles = None
+        if policy == "IN_ALL_LANGS" and langs.issubset(last["labels"].keys()):
+            titles = {lang: last["labels"][lang]["value"] for lang in langs}
+        elif policy == "IN_ANY_LANG":
+            titles = {lang: last["labels"][lang]["value"] for lang in langs if lang in last["labels"]}
+
+        if titles:
+            fo.write((id+'\t'+'\t'.join([lang+':'+titles[lang] for lang in titles.keys()])+'\n').encode('utf-8'))
+            return True
+        else:
+            return False
+
+    written = 0
+    _open = BZ2File if latest_all_json_file.endswith(".bz2") else open
+    with _open(latest_all_json_file, 'r', buffering=1024*1024*16) as fi, \
+            BZ2File(join(data_dir,simple_titles_path+".simple.bz2"),'w') as fo:
+        builder = ObjectBuilder()
+        completed = 0
+        for event, value in ijson.basic_parse(fi, buf_size=1024*1024*16):
+             builder.event(event, value)
+             if len(builder.value)>1:
+                if process_entry(builder.value.pop(0), fo): written += 1
+                completed += 1
+                print("\rCompleted %d\ttitles %d" % (completed,written), end="")
+        print("")
+
+        #process the last entry
+        process_entry(builder.value.pop(0))
 
 """
 Reads all multi-lingual documents in a folder (see wikipedia_tools.py to generate them) and generates, for each of the
@@ -212,24 +258,23 @@ def fetch_wikipedia_multilingual(wiki_multi_path, langs, min_words=100):
 
 if __name__ == "__main__":
 
-    storage_path = "/media/moreo/1TB Volume/Datasets/Multilingual/Wikipedia"
-    #storage_path = "/home/data/wikipedia/dumps"
+    #storage_path = "/media/moreo/1TB Volume/Datasets/Multilingual/Wikipedia"
+    storage_path = "/home/data/wikipedia/dumps"
     #storage_path = "/Users/moreo/cl-esa-p/storage"
 
-    policy = "IN_ALL_LANGS"
 
     from data.cl_matrix_composer import LANGS_WITH_NLTK_STEMMING as langs
     #from jrcacquis_reader import LANGS as langs
     langs = frozenset(langs)
 
+    #simplify_multilingual_titles(storage_path, langs, policy="IN_ANY_LANG")
+    multi_dict, inv_dict = extract_multilingual_titles(storage_path, langs, policy='IN_ALL_LANGS')
 
-    multi_dict, inv_dict = extract_multilingual_titles(storage_path, langs, policy=policy)
+    #extract_multilingual_documents(inv_dict, ['es','it','en'], join(storage_path,'text'), join(storage_path,'multilingual_docs'))
 
-    extract_multilingual_documents(inv_dict, ['es','it','en'], join(storage_path,'text'), join(storage_path,'multilingual_docs'))
+    #langs = ["en", "it", "es"]
+    #wiki_multi_path = join(storage_path, "multilingual_docs")
 
-    langs = ["en", "it", "es"]
-    wiki_multi_path = join(storage_path, "multilingual_docs")
+    #m_docs = fetch_wikipedia_multilingual(wiki_multi_path, langs, min_words=100)
 
-    m_docs = fetch_wikipedia_multilingual(wiki_multi_path, langs, min_words=100)
-
-    print("Read % documents" % len(m_docs[langs[0]]))
+    #print("Read % documents" % len(m_docs[langs[0]]))
