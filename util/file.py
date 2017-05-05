@@ -1,7 +1,8 @@
 from __future__ import print_function
-from os import listdir
-from os.path import isdir, isfile, join
+from os import listdir, makedirs
+from os.path import isdir, isfile, join, exists
 from sklearn.externals.six.moves import urllib
+
 
 def download_file(url, archive_filename):
     def progress(blocknum, bs, size):
@@ -22,3 +23,6 @@ def list_dirs(dir):
 
 def list_files(dir):
     return ls(dir, typecheck=isfile)
+
+def makedirs_if_not_exist(path):
+    if not exists(path): makedirs(path)
