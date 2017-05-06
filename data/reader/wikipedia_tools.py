@@ -201,12 +201,10 @@ def extract_multilingual_titles_from_simplefile(data_dir, filename, langs, polic
             if id in multiling_titles:
                 raise ValueError("id <%s> already indexed" % id)
 
-            titles = dict((tuple(lang_title.split(':')) for lang_title in parts[1:]))
+            titles = dict(((lang_title[:lang_title.find(':')],lang_title[lang_title.find(':')+1:].decode('utf-8')) for lang_title in parts[1:]))
             for lang in titles.keys():
                 if lang not in langs:
                     del titles[lang]
-                else:
-                    titles[lang]=titles[lang].decode('utf-8')
 
             if (policy == "IN_ALL_LANGS" and len(titles) == len(langs))\
                     or (policy == "IN_ANY_LANG" and len(titles) > 0):
