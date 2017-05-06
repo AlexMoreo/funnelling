@@ -217,12 +217,15 @@ def extract_multilingual_titles_from_simplefile(data_dir, filename, langs, polic
         _open = BZ2File if simplified_file.endswith(".bz2") else open
         with _open(simplified_file, 'r', buffering=1024*1024*16) as fi:
             completed = 0
-            for line in fi:
-                process_entry(line)
-                completed += 1
-                if completed % 10 == 0:
-                    print("\rCompleted %d\ttitles %d" % (completed,len(multiling_titles)), end="")
-            print("\rCompleted %d\ttitles %d" % (completed, len(multiling_titles)), end="\n")
+            try:
+                for line in fi:
+                    process_entry(line)
+                    completed += 1
+                    if completed % 10 == 0:
+                        print("\rCompleted %d\ttitles %d" % (completed,len(multiling_titles)), end="")
+                print("\rCompleted %d\t\ttitles %d" % (completed, len(multiling_titles)), end="\n")
+            except EOFError:
+                print("\nUnexpected file ending... saving anyway")
 
             print("Pickling dictionaries in %s" % data_dir)
             pickle.dump(multiling_titles, open(pickle_dict,'wb'), pickle.HIGHEST_PROTOCOL)
