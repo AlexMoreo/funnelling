@@ -10,6 +10,7 @@ import rdflib
 from rdflib.namespace import RDF, SKOS
 from rdflib import URIRef
 import zipfile
+from data.languages import JRC_LANGS
 
 """
 bg = Bulgarian
@@ -36,13 +37,6 @@ sl = Slovene
 sv = Swedish
 """
 
-#top 10 languages in wikipedia order by the number of articles
-#LANGS_10_MOST_WIKI = ['en','fr','sv','de','es','it','pt','nl','pl','ro']
-
-
-
-#all languages in JRC-acquis v3
-LANGS = ['bg','cs','da','de','el','en','es','et','fi','fr','hu','it','lt','lv','mt','nl','pl','pt','ro','sk','sl','sv']
 
 class JRCAcquis_Document:
     def __init__(self, id, name, lang, year, head, body, categories):
@@ -116,11 +110,11 @@ def _filter_by_frequency(doclist, cat_threshold):
 
 def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=True, cat_filter=None, cat_threshold=0):
     if not langs:
-        langs = LANGS
+        langs = JRC_LANGS
     else:
         if isinstance(langs, str): langs = [langs]
         for l in langs:
-            if l not in LANGS:
+            if l not in JRC_LANGS:
                 raise ValueError('Language %s is not among the valid languages in JRC-Acquis v3' % l)
 
     if not data_path:
@@ -223,23 +217,4 @@ def inspect_eurovoc(data_path, eurovoc_skos_core_concepts_filename='eurovoc_in_s
         return broadest_concepts
     else:
         raise ValueError("Selection policy %s is not currently supported" % select)
-
-
-if __name__ == "__main__":
-    storage_path = "/media/moreo/1TB Volume/Datasets/Multilingual/JRC_Acquis_v3"
-
-    cat_list = inspect_eurovoc(storage_path, 'eurovoc_in_skos_core_concepts.rdf', pickle_name="broadest_concepts.pickle")
-    request = fetch_jrcacquis(langs=['ro'], data_path=storage_path, years=[2001, 2002, 2003, 2004, 2005, 2006], cat_filter=cat_list, cat_threshold=30)
-
-    print("request length: %d" % len(request))
-
-    #number of effective categories
-    categories = set()
-    for d in request:
-        categories = categories | set(d.categories)
-
-    print("Effective categories: %d" % len(categories))
-
-
-
 

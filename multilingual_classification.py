@@ -1,68 +1,92 @@
-from data.reader.jrcacquis_reader import fetch_jrcacquis, JRCAcquis_Document
-from sklearn.feature_extraction.text import TfidfVectorizer
-import os
-import cPickle as pickle
-from sklearn.svm import SVC
-import numpy as np
-from scipy import stats
-from scipy.spatial.distance import cdist
+from data.clesa_data_generator import *
+from data.languages import *
+from model.clesa import CLESA, CLESA_PPindex
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import make_scorer
+from util.metrics import *
+import sys
+import time
 
-def split_data(data, train_years, test_years):
-    train = []
-    test  = []
-    for doc in data:
-        if doc.year in train_years:
-            train.append((doc.text, doc.categories))
-        elif doc.year in test_years:
-            test.append((doc.text, doc.categories))
-    return train, test
+def fit_model_hyperparameters(Xtr, ytr, parameters, model):
+    single_class = ytr.shape[1] == 1
+    if not single_class:
+        parameters = {'estimator__' + key: parameters[key] for key in parameters.keys()}
+        model = OneVsRestClassifier(model, n_jobs=-1)
+    model_tunning = GridSearchCV(model, param_grid=parameters, scoring=make_scorer(macroF1), error_score=0, refit=True, cv=5, n_jobs=-1)
 
-def show_classification_scheme(Y):
-    class_count = {}
-    for y in Y:
-        for c in y:
-            if c not in class_count:
-                class_count[c] = 0
-            class_count[c] += 1
-    for c in class_count.keys():
-        if class_count[c]<=20:
-            del class_count[c]
-    print "num classes", len(class_count)
-    print class_count
+    if single_class: ytr = np.squeeze(ytr)
+    return model_tunning.fit(Xtr, ytr)
 
-class SVM_kendal:
-    def __init__(self, **kwargs):
-        kendalltau_kernel = lambda X,W: cdist(X, W, lambda u,v: stats.kendalltau(u, v)[0])
-        self.svm = SVC(kernel=kendalltau_kernel, **kwargs)
+if __name__ == "__main__":
 
-train_years = [2005]
-test_years  = [2006]
-langs = ['es','it']
-data='./storage'
+    dataset = "JRCAcquis"
+    langmap = "DEBUG"
+    tr_years = [2005]
+    te_years = [2006]
+    cat_threshold=50
+    jrcacquis_datapath = "/media/moreo/1TB Volume/Datasets/Multilingual/JRC_Acquis_v3"
+    wikipedia_datapath = "/media/moreo/1TB Volume/Datasets/Multilingual/Wikipedia/multilingual_docs"
 
-for lang in langs:
-    pickle_name = os.path.join(data, 'preprocessed_' + lang
-                               + '_tr_' + '_'.join([str(y) for y in train_years])
-                               + '_te_' + '_'.join([str(y) for y in test_years ]) + '.pickle')
-    if os.path.exists(pickle_name):
-        print("unpickling %s" % pickle_name)
-        ((trX, trY), (teX, teY)) = pickle.load(open(pickle_name, 'rb'))
-    else:
-        raw_data = fetch_jrcacquis(langs=lang, data_path=data, years=train_years + test_years, cat_filter=[4, 8, 10, 12, 16])
-        print "out!"
-        sys.exit()
-        train, test = split_data(raw_data, train_years, test_years)
-        print("processing %d documents for language <%s>" % (len(train) + len(test), lang))
+    langs = lang_set[langmap]
 
-        tr_data, tr_labels = zip(*train)
-        te_data, te_labels = zip(*test)
-        tfidf = TfidfVectorizer(strip_accents='unicode', stop_words=None, max_df=0.9, min_df=3, sublinear_tf=True)
-        trX = tfidf.fit_transform(tr_data)
-        teX = tfidf.transform(te_data)
-        trY=tr_labels
-        teY=te_labels
-        pickle.dump(((trX, trY), (teX, teY)), open(pickle_name,'wb'),pickle.HIGHEST_PROTOCOL)
-    print("load train=%s and test=%s matrices" % (str(trX.shape), str(teX.shape)))
-    show_classification_scheme(trY)
+    pickle_name = join(jrcacquis_datapath, 'preprocessed_' + langmap
+                               + '_tr_' + year_list_as_str(tr_years)
+                               + '_te_' + year_list_as_str(te_years)
+                               + '_broadcats.pickle')
 
-print "Done"
+    clesa_data = clesa_data_generator(dataset, langs, tr_years, te_years,
+                                      jrcacquis_datapath, wikipedia_datapath,
+                                      cat_threshold=50, pickle_name=pickle_name, langmap=langmap)
+
+    #clesa = CLESA()
+    clesa = CLESA_PPindex(5)
+    print("Running CL-ESA transformation")
+    clesa.fit(clesa_data.lW)
+    Xtr_,Ytr_ = clesa.transform(clesa_data.lXtr, clesa_data.lYtr)
+    Xte_, Yte_ = clesa.transform(clesa_data.lXte,
+                                 clesa_data.lYte)  # the lYte is not altered, just stacked in the same order
+
+    Xtr_ = Xtr_[:500,:]
+    Xte_ = Xte_[:500, :]
+    Ytr_ = Ytr_[:500,:5]
+    Yte_ = Yte_[:500,:5]
+    print(Xtr_.shape)
+    print(Ytr_.shape)
+    model = clesa.learner()
+
+    init_time = time.time()
+
+    print("fit")
+    model = OneVsRestClassifier(model, n_jobs=-1)
+    model.fit(Xtr_, Ytr_)
+    print("predict")
+    yte_ = model.predict(Xte_)
+    print("eval")
+    macro_f1 = macroF1(Yte_, yte_)
+    micro_f1 = microF1(Yte_, yte_)
+    print("Test scores: %.3f macro-f1, %.3f micro-f1" % (macro_f1, micro_f1))
+
+    sys.exit()
+
+    #parameters = {'C': [1e1, 1], 'loss': ['squared_hinge'], 'dual': [True]}
+    parameters = {'C': [1e1, 1]}
+    #parameters = {'C': [1e4, 1e3, 1e2, 1e1, 1, 1e-1], 'loss': ['hinge', 'squared_hinge'], 'dual': [True, False]}
+
+    print("Tunning hyperparameters...")
+    tunned_model = fit_model_hyperparameters(Xtr_, Ytr_, parameters, model)
+    tunning_time = time.time() - init_time
+    print("\t%s: best parameters %s, best score %.3f, took %.3f seconds" %
+          (type(model).__name__, tunned_model.best_params_, tunned_model.best_score_, tunning_time))
+
+    Xte_, Yte_ = clesa.transform(clesa_data.lXte, clesa_data.lYte) #the lYte is not altered, just stacked in the same order
+    print(Xte_.shape)
+    print(Yte_.shape)
+
+    yte_ = tunned_model.predict(Xte_)
+
+    macro_f1 = macroF1(Yte_, yte_)
+    micro_f1 = microF1(Yte_, yte_)
+    print("Test scores: %.3f macro-f1, %.3f micro-f1" % (macro_f1, micro_f1))
+
+    # CLESA: Test scores: 0.284 macro-f1, 0.555 micro-f1

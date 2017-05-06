@@ -1,5 +1,11 @@
 import numpy as np
+import dill
 import sklearn
+from sklearn.svm import SVC, LinearSVC
+import numpy as np
+from scipy import stats
+from scipy.spatial.distance import cdist
+
 
 class CLESA(object):
 
@@ -18,9 +24,9 @@ class CLESA(object):
         self.dimensionality() #checks consistency in the vector space across languages
 
     # lX is a dictionary of (language, doc-by-term matrix) that
-    # is to be transformed into the CL-ESA space. Returns a single matrix in this space
-    # containing all documents from all languages
-    def transform(self, lX):
+    # is to be transformed into the CL-ESA space. Returns a matrix in this space
+    # containing all documents from all languages, and the label-matrix stacked consistently.
+    def transform(self, lX, lY):
         if not hasattr(self, "lW"):
             raise ValueError("Error, transform method called before fit")
 
@@ -30,18 +36,20 @@ class CLESA(object):
                 raise ValueError("Language %s not in scope" % lang)
 
         _clesaX = []
+        _clesaY = []
         #computes the CL-ESA representation
         for lang in langs:
             X = lX[lang]
             W = self.lW[lang]
             _X = self.ESA(X,W)
             _clesaX.append(_X)
+            _clesaY.append(lY[lang])
 
-        return np.vstack(_clesaX)
+        return np.vstack(_clesaX), np.vstack(_clesaY)
 
-    def fit_transform(self, lW, lX):
+    def fit_transform(self, lW, lX, lY):
         self.fit(lW)
-        return self.transform(lX)
+        return self.transform(lX, lY)
 
     def ESA(self,X,W):
         if X.shape[1] != W.shape[1]:
@@ -63,7 +71,25 @@ class CLESA(object):
             elif self.dimensions != self.lW[lang].shape[0]:
                 raise ValueError("The dimensionality of the W matrix is inconsistent across languages")
 
+    def learner(self, **kwargs):
+        if not hasattr(self, "svm"):
+            self.svm = LinearSVC(**kwargs)
+        return self.svm
 
 
+class CLESA_PPindex(CLESA):
 
+    def __init__(self, num_permutations, similarity='dot'):
+        super(CLESA_PPindex, self).__init__(similarity)
+        self.num_permutations = num_permutations
 
+    def transform(self, lX, lY):
+        lX_,lY_ = super(CLESA_PPindex, self).transform(lX, lY)
+        return np.argsort(-lX_, axis=1)[:,:self.num_permutations], lY_
+
+    def learner(self, **kwargs):
+        if not hasattr(self, "svm"):
+            kendalltau_kernel = lambda X, W: cdist(X, W, lambda u, v: stats.kendalltau(u, v)[0])
+            spearmanr_kernel  = lambda X, W: cdist(X, W, lambda u, v: stats.spearmanr(u, v)[0])
+            self.svm = SVC(kernel=kendalltau_kernel, **kwargs)
+        return self.svm

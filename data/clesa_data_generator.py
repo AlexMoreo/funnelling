@@ -1,4 +1,8 @@
 from __future__ import print_function
+def warn(*args, **kwargs):
+   pass
+import warnings
+warnings.warn = warn
 import os
 from os.path import join
 from data.reader.jrcacquis_reader import fetch_jrcacquis, inspect_eurovoc
@@ -10,7 +14,8 @@ from nltk.corpus import stopwords
 from time import time as T
 from data.reader.wikipedia_tools import fetch_wikipedia_multilingual
 from model.clesa import CLESA
-from model.clesa_ppindex import CLESA_PPindex
+from data.languages import *
+from sklearn.preprocessing import MultiLabelBinarizer
 
 """
 Required nltk.download() packages:
@@ -21,7 +26,9 @@ Required nltk.download() packages:
 
 #Languages which can be stemmed by means of NLTK
 #danish dutch english finnish french german hungarian italian norwegian porter portuguese romanian russian spanish swedish
-LANGS_WITH_NLTK_STEMMING = ['da', 'nl', 'en', 'fi', 'fr', 'de', 'hu', 'it', 'pt', 'ro', 'es', 'sv']
+
+JRC_ACQUIS = "JRCAcquis"
+DATASETS_SUPPORTED = [JRC_ACQUIS]
 
 class CLESA_Data:
     def __init__(self, tr_years=None, te_years=None, langmap='Unknown', notes=""):
@@ -34,6 +41,7 @@ class CLESA_Data:
         self.te_years=te_years
         self.langmap=langmap
         self.notes=notes
+        self.labels_processed = False
 
     def add(self,lang,Xtr,Ytr,Xte,Yte,W):
         self.lXtr[lang] = Xtr
@@ -41,6 +49,31 @@ class CLESA_Data:
         self.lXte[lang] = Xte
         self.lYte[lang] = Yte
         self.lW[lang] = W
+
+    def process_labels(self):
+        if self.labels_processed: return
+        langs = self.lYtr.keys()
+        def _expandlabels(y,langs):
+            doclabels = []
+            for lang in langs: doclabels.extend(y[lang])
+            return doclabels
+        tr_doclabels = _expandlabels(self.lYtr, langs)
+        te_doclabels = _expandlabels(self.lYte, langs)
+        mlb = MultiLabelBinarizer()
+        Ytr = mlb.fit_transform(tr_doclabels)
+        Yte = mlb.transform(te_doclabels)
+
+        def _reallocatelabels(y,langs,lX,lY):
+            offset = 0
+            for lang in langs:
+                l_num_docs = lX[lang].shape[0]
+                lY[lang] = y[offset:offset + l_num_docs]
+                offset += l_num_docs
+
+        _reallocatelabels(Ytr, langs, self.lXtr, self.lYtr)
+        _reallocatelabels(Yte, langs, self.lXte, self.lYte)
+
+        self.labels_processed = True
 
 
 def show_classification_scheme(Y):
@@ -51,23 +84,21 @@ def show_classification_scheme(Y):
                 class_count[c] = 0
             class_count[c] += 1
     print("\nnum classes %d" % len(class_count))
+    class_count = class_count.items()
+    class_count.sort(key=lambda x: x[1], reverse=True)
     print(class_count)
 
 def as_lang_dict(doc_list, langs):
     return {lang:[(d.text,d.categories) for d in doc_list if d.lang == lang] for lang in langs}
 
-nltk_langmap = {'da': 'danish', 'nl': 'dutch', 'en': 'english', 'fi': 'finnish', 'fr': 'french', 'de': 'german',
-                    'hu': 'hungarian', 'it': 'italian', 'pt': 'portuguese', 'ro': 'romanian', 'es': 'spanish',
-                    'sv': 'swedish'}
-
 class NLTKLemmaTokenizer(object):
 
     def __init__(self, lang, verbose=False):
-        if lang not in nltk_langmap:
+        if lang not in NLTK_LANGMAP:
             raise ValueError('Language %s is not supported in NLTK' % lang)
         self.verbose=verbose
         self.called = 0
-        self.wnl = SnowballStemmer(nltk_langmap[lang])
+        self.wnl = SnowballStemmer(NLTK_LANGMAP[lang])
         self.cache = {}
     def __call__(self, doc):
         self.called += 1
@@ -82,37 +113,28 @@ class NLTKLemmaTokenizer(object):
         return stems
         #return [self.wnl.stem(t) for t in word_tokenize(doc)]
 
-if __name__ == "__main__":
-    dataset = "JRCAcquis"
-    langmap = "DEBUG"
-    lang_set = {'NLTK':LANGS_WITH_NLTK_STEMMING, 'DEBUG':['en', 'es', 'it']}
-    langs = lang_set[langmap]
-    tr_years = [2005]
-    te_years = [2006]
-    cat_threshold=50
+def year_list_as_str(years):
+    y_str = list(years)
+    y_str.sort()
+    return '_'.join([str(y) for y in y_str])
 
-    jrcacquis_datapath = "/media/moreo/1TB Volume/Datasets/Multilingual/JRC_Acquis_v3"
-    wikipedia_datapath = "/media/moreo/1TB Volume/Datasets/Multilingual/Wikipedia/multilingual_docs"
+def clesa_data_generator(dataset, langs, tr_years, te_years, jrcacquis_datapath, wikipedia_datapath, cat_threshold=50, pickle_name="", langmap="unknown"):
 
-    tr_years_str = '_'.join([str(y) for y in tr_years])
-    te_years_str = '_'.join([str(y) for y in te_years])
-
-    pickle_name = join(jrcacquis_datapath, 'preprocessed_' + langmap
-                               + '_tr_' + tr_years_str
-                               + '_te_' + te_years_str
-                               + '_broadests.pickle')
+    if dataset not in DATASETS_SUPPORTED:
+        raise ValueError("Dataset %s is not supportd" % dataset)
 
     if os.path.exists(pickle_name):
         print("unpickling %s" % pickle_name)
-        clesa_data = pickle.load(open(pickle_name, 'rb'))
-    else:
-        clesa_data = CLESA_Data(tr_years=tr_years_str, te_years=te_years_str, langmap=langmap, notes="from "+dataset)
+        return pickle.load(open(pickle_name, 'rb'))
 
-        wiki_docs, n_pivots = fetch_wikipedia_multilingual(wikipedia_datapath, langs, min_words=100)
-        if n_pivots == 0:
-            raise ValueError("Wikipedia documents were not loaded correctly.")
+    clesa_data = CLESA_Data(tr_years=year_list_as_str(tr_years), te_years=year_list_as_str(te_years), langmap=langmap, notes="from "+dataset)
 
-        print("Fetching JRC-Acquis V.3 data...")
+    wiki_docs, n_pivots = fetch_wikipedia_multilingual(wikipedia_datapath, langs, min_words=100)
+    if n_pivots == 0:
+        raise ValueError("Wikipedia documents were not loaded correctly.")
+
+    print("Fetching "+dataset+" data...")
+    if dataset == JRC_ACQUIS:
         cat_list = inspect_eurovoc(jrcacquis_datapath, pickle_name="broadest_concepts.pickle")
         tr_request, final_cats = fetch_jrcacquis(langs=langs, data_path=jrcacquis_datapath, years=tr_years, cat_filter=cat_list, cat_threshold=cat_threshold)
         te_request, _ = fetch_jrcacquis(langs=langs, data_path=jrcacquis_datapath, years=te_years, cat_filter=final_cats)
@@ -124,42 +146,28 @@ if __name__ == "__main__":
         tr_request = as_lang_dict(tr_request, langs)
         te_request = as_lang_dict(te_request, langs)
 
-        for lang in langs:
-            print("\nprocessing %d training, %d test, and %d wikipedia documentsfor language <%s>" % (len(tr_request[lang]), len(te_request[lang]), n_pivots, lang))
+    for lang in langs:
+        print("\nprocessing %d training, %d test, and %d wikipedia documents for language <%s>" % (len(tr_request[lang]), len(te_request[lang]), n_pivots, lang))
 
-            tr_data, tr_labels = zip(*tr_request[lang])
-            te_data, te_labels = zip(*te_request[lang])
+        tr_data, tr_labels = zip(*tr_request[lang])
+        te_data, te_labels = zip(*te_request[lang])
 
-            tfidf = TfidfVectorizer(strip_accents='unicode', min_df=3, sublinear_tf=True,
-                                    tokenizer=NLTKLemmaTokenizer(lang, verbose=True), stop_words=stopwords.words(nltk_langmap[lang]))
-            Xtr = tfidf.fit_transform(tr_data)
-            Xte = tfidf.transform(te_data)
-            W   = tfidf.transform(wiki_docs[lang])
+        tfidf = TfidfVectorizer(strip_accents='unicode', min_df=3, sublinear_tf=True,
+                                tokenizer=NLTKLemmaTokenizer(lang, verbose=True), stop_words=stopwords.words(NLTK_LANGMAP[lang]))
+        XWtr= tfidf.fit_transform(list(tr_data)+wiki_docs[lang])
+        Xte = tfidf.transform(te_data)
+        Xtr = XWtr[:len(tr_data)]
+        W   = XWtr[len(tr_data):]
 
-            show_classification_scheme(tr_labels)
-            show_classification_scheme(te_labels)
+        clesa_data.add(lang=lang,Xtr=Xtr,Ytr=tr_labels,Xte=Xte,Yte=te_labels,W=W)
 
-            clesa_data.add(lang=lang,Xtr=Xtr,Ytr=tr_labels,Xte=Xte,Yte=te_labels,W=W)
+    print("\nProcessing labels...")
+    clesa_data.process_labels()
 
-        print("Pickling CLESA data object in %s" % pickle_name)
-        pickle.dump(clesa_data, open(pickle_name, 'wb'), pickle.HIGHEST_PROTOCOL)
+    print("Pickling CLESA data object in %s" % pickle_name)
+    pickle.dump(clesa_data, open(pickle_name, 'wb'), pickle.HIGHEST_PROTOCOL)
     print("Done!")
-
-    #clesa = CLESA()
-    clesa = CLESA_PPindex(101)
-    print("fitting...")
-    clesa.fit(clesa_data.lW)
-    print("transform training...")
-    Xtr_ = clesa.transform(clesa_data.lXtr)
-    print("transform test...")
-    Xte_ = clesa.transform(clesa_data.lXte)
-
-    print(Xtr_.shape)
-    print(Xte_.shape)
-
-
-
-
+    return clesa_data
 
 """
 Read 65454 documents in total

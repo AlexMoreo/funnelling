@@ -252,7 +252,7 @@ def fetch_wikipedia_multilingual(wiki_multi_path, langs, min_words=100):
             valid_documents += 1
             for l in langs:
                 mling_documents[l].append(m_doc[l])
-    print("")
+    print("\rProcessed %d/%d documents, valid %d/%d" % (d, len(multi_docs), valid_documents, len(multi_docs)), end="\n")
 
     return mling_documents, valid_documents
 
@@ -263,7 +263,7 @@ if __name__ == "__main__":
     #storage_path = "/Users/moreo/cl-esa-p/storage"
 
 
-    from data.cl_matrix_composer import LANGS_WITH_NLTK_STEMMING as langs
+    from data.clesa_data_generator import LANGS_WITH_NLTK_STEMMING as langs
     #from jrcacquis_reader import LANGS as langs
     langs = frozenset(langs)
 
