@@ -100,7 +100,8 @@ def extract_multilingual_documents(inv_dict, langs, text_path, out_path):
                 else:
                     _create_doc(target_file, id, doc, lang)
                     docs_created+=1
-    print("Multilingual documents %d" % docs_created)
+            print("\rMultilingual documents %d, lang=%s" % (docs_created, lang), end='')
+    print("\n")
 
 def extract_multilingual_titles_from_json(data_dir, langs, policy="IN_ALL_LANGS", return_both=True):
     json_file = "latest-all.json.bz2"  # in https://dumps.wikimedia.org/wikidatawiki/entities/latest-all.json.bz2
@@ -323,8 +324,8 @@ def fetch_wikipedia_multilingual(wiki_multi_path, langs, min_words=100):
 
 if __name__ == "__main__":
 
-    storage_path = "/media/moreo/1TB Volume/Datasets/Multilingual/Wikipedia"
-    #storage_path = "/home/data/wikipedia/dumps"
+    #storage_path = "/media/moreo/1TB Volume/Datasets/Multilingual/Wikipedia"
+    #storage_path = "/home/data/wikipedia"
     #storage_path = "/Users/moreo/cl-esa-p/storage"
 
 
@@ -333,10 +334,17 @@ if __name__ == "__main__":
     langs = frozenset(langs)
 
     #simplify_multilingual_titles(storage_path, langs, policy="IN_ANY_LANG")
-    multi_dict, inv_dict = extract_multilingual_titles_from_simplefile(storage_path,
-               'extraction_da_de_en_es_fi_fr_hu_it_nl_pt_ro_sv.IN_ANY_LANG.simple.bz2', langs, policy='IN_ALL_LANGS')
+    #_, inv_dict = extract_multilingual_titles_from_simplefile(storage_path,
+    #           'extraction_da_de_en_es_fi_fr_hu_it_nl_pt_ro_sv.IN_ANY_LANG.simple.bz2', langs, policy='IN_ALL_LANGS')
 
-    #extract_multilingual_documents(inv_dict, ['es','it','en'], join(storage_path,'text'), join(storage_path,'multilingual_docs'))
+
+    storage_dir = '/home/moreo/CLESA/cl-esa-p/storage/'
+    pickle_name = 'extraction_da_de_en_es_fi_fr_hu_it_nl_pt_ro_sv.IN_ALL_LANGS.multi_invdict.pickle'
+    inv_dict = pickle.load(open(join(storage_dir, pickle_name), 'rb'))
+
+    wikipedia_home = "/home/data/wikipedia"
+    extract_multilingual_documents(inv_dict, langs, join(wikipedia_home,'text'),
+                                   out_path=join(storage_dir, 'multilingual_docs_JRC_NLTK'))
 
     #langs = ["en", "it", "es"]
     #wiki_multi_path = join(storage_path, "multilingual_docs")
