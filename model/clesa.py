@@ -11,10 +11,12 @@ class CLESA(object):
 
     supported_similarity = ['dot', 'cosine']
 
-    def __init__(self, similarity='dot'):
+    def __init__(self, similarity='dot', centered=False, post_norm=False):
         if similarity not in self.supported_similarity:
             raise ValueError("Similarity method %s is not supported" % similarity)
         self.similarity = similarity
+        self.centered = centered
+        self.post_norm=post_norm
 
     # lW is a dictionary of (language, doc-by-term matrix)
     # the matrix is already processed (i.e., weighted, reduced, etc.)
@@ -30,15 +32,14 @@ class CLESA(object):
         if not hasattr(self, "lW"):
             raise ValueError("Error, transform method called before fit")
 
-        langs = lX.keys()
-        for lang in langs:
+        for lang in lX.keys():
             if lang not in self.l:
                 raise ValueError("Language %s not in scope" % lang)
 
         _clesaX = []
         _clesaY = []
         #computes the CL-ESA representation
-        for lang in langs:
+        for lang in lX.keys():
             X = lX[lang]
             W = self.lW[lang]
             _X = self.ESA(X,W)
@@ -53,13 +54,26 @@ class CLESA(object):
 
     def ESA(self,X,W):
         if X.shape[1] != W.shape[1]:
-            raise ValueError("The feature space of X and W does not agree")
+            raise ValueError("The feature spaces for X=%s and W=%s do not agree" % (str(X.shape),str(W.shape)))
 
         if self.similarity in ['dot', 'cosine']:
             if self.similarity == 'cosine':
                 X = sklearn.preprocessing.normalize(X, norm='l2', axis=1, copy=True)
                 W = sklearn.preprocessing.normalize(W, norm='l2', axis=1, copy=True)
-            return (X * W.transpose()).toarray()
+
+            XW = (X * W.transpose()).toarray()
+            if self.centered:
+                pX = np.sum(X, axis=1)/X.shape[1]
+                pW = np.sum(W, axis=1)/W.shape[1]
+                pXpW= np.sqrt(pX*pW.transpose())
+                out = XW - pXpW
+            else:
+                out = XW
+
+            if self.post_norm:
+                return sklearn.preprocessing.normalize(out, norm='l2', axis=1, copy=True)
+            else:
+                return out
 
     def dimensionality(self):
         if hasattr(self, "dimensions"):
@@ -89,6 +103,7 @@ class CLESA_PPindex(CLESA):
 
     def learner(self, **kwargs):
         if not hasattr(self, "svm"):
+            distance_kernel = lambda X, W: cdist(X, W)
             kendalltau_kernel = lambda X, W: cdist(X, W, lambda u, v: stats.kendalltau(u, v)[0])
             spearmanr_kernel  = lambda X, W: cdist(X, W, lambda u, v: stats.spearmanr(u, v)[0])
             self.svm = SVC(kernel=kendalltau_kernel, **kwargs)

@@ -78,6 +78,19 @@ def parse_document(file, year, head=False):
 
     return JRCAcquis_Document(id=doc_id, name=doc_name, lang=doc_lang, year=year, head=doc_head, body=doc_body, categories=doc_categories)
 
+# removes documents without a counterpart in all other languages
+def _force_parallel(doclist, langs):
+    n_langs = len(langs)
+    par_id_count = {}
+    for d in doclist:
+        try:
+            par_id_count[d.parallel_id] = 1+par_id_count[d.parallel_id]
+        except KeyError:
+            par_id_count[d.parallel_id] = 1
+    incomplete_ids = set([id for id,count in par_id_count.items() if count<n_langs])
+    return [doc for doc in doclist if doc.parallel_id not in incomplete_ids]
+
+
 #filters out documents which do not contain any category in the cat_filter list
 def _filter_by_category(doclist, cat_filter):
     if not isinstance(cat_filter, frozenset):
@@ -108,7 +121,7 @@ def _filter_by_frequency(doclist, cat_threshold):
     return _filter_by_category(doclist, freq_categories), freq_categories
 
 
-def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=True, cat_filter=None, cat_threshold=0):
+def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=True, cat_filter=None, cat_threshold=0, force_parallel=False):
     if not langs:
         langs = JRC_LANGS
     else:
@@ -160,7 +173,6 @@ def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=
                             jrc_doc = parse_document(join(year_dir, doc_file), year)
                         except ValueError:
                             jrc_doc = None
-                            empty += 1
 
                         if jrc_doc and (not ignore_unclassified or jrc_doc.categories):
                             l_y_documents.append(jrc_doc)
@@ -175,6 +187,8 @@ def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=
         print("Read %d documents for language %s\n" % (read, l))
         total_read += read
     print("Read %d documents in total" % (total_read))
+    if force_parallel:
+        request = _force_parallel(request, langs)
     if cat_filter:
         request = _filter_by_category(request, cat_filter)
         request, final_cats = _filter_by_frequency(request, cat_threshold)

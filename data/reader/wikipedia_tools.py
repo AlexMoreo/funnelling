@@ -92,6 +92,7 @@ def extract_multilingual_documents(inv_dict, langs, text_path, out_path):
         title = _extract_title(doc)
 
         if title in inv_dict[lang]:
+            #pass
             ids = inv_dict[lang][title]
             for id in ids:
                 target_file = join(out_path, id) + ".xml"
@@ -100,8 +101,9 @@ def extract_multilingual_documents(inv_dict, langs, text_path, out_path):
                 else:
                     _create_doc(target_file, id, doc, lang)
                     docs_created+=1
-            print("\rMultilingual documents %d, lang=%s" % (docs_created, lang), end='')
-    print("\n")
+        else:
+            if not re.match('[A-Za-z]+', title):
+                print("Title <%s> for lang <%s> not in dictionary" % (title, lang))
 
 def extract_multilingual_titles_from_json(data_dir, langs, policy="IN_ALL_LANGS", return_both=True):
     json_file = "latest-all.json.bz2"  # in https://dumps.wikimedia.org/wikidatawiki/entities/latest-all.json.bz2
@@ -288,6 +290,9 @@ specified languages, a list contanining all its documents, so that the i-th elem
 specific version of the same document. Documents are forced to contain version in all specified languages and to contain
 a minimum number of words; otherwise it is discarded.
 """
+class MinWordsNotReached(Exception): pass
+class WrongDocumentFormat(Exception): pass
+
 def _load_multilang_doc(path, langs, min_words=100):
     import xml.etree.ElementTree as ET
     from xml.etree.ElementTree import Element
@@ -300,36 +305,47 @@ def _load_multilang_doc(path, langs, min_words=100):
             if n_words >= min_words:
                 doc[lang] = doc_body.text
             else:
-                return None
+                raise MinWordsNotReached
         else:
-            return None
+            raise WrongDocumentFormat
     return doc
 
 #returns the multilingual documents mapped by language, and a counter with the number of documents readed
-def fetch_wikipedia_multilingual(wiki_multi_path, langs, min_words=100):
+def fetch_wikipedia_multilingual(wiki_multi_path, langs, min_words=100, deletions=False, max_documents=-1):
     multi_docs = list_files(wiki_multi_path)
     mling_documents = {l:[] for l in langs}
     valid_documents = 0
+    minwords_exception = 0
+    wrongdoc_exception = 0
     for d,multi_doc in enumerate(multi_docs):
-        if d % 100 == 0:
-            print("\rProcessed %d/%d documents, valid %d/%d" % (d, len(multi_docs), valid_documents, len(multi_docs)), end="")
-        m_doc = _load_multilang_doc(join(wiki_multi_path, multi_doc), langs, min_words)
-        if m_doc:
+        print("\rProcessed %d/%d documents, valid %d/%d, few_words=%d, few_langs=%d" %
+              (d, len(multi_docs), valid_documents, len(multi_docs), minwords_exception, wrongdoc_exception),end="")
+        doc_path = join(wiki_multi_path, multi_doc)
+        try:
+            m_doc = _load_multilang_doc(doc_path, langs, min_words)
             valid_documents += 1
             for l in langs:
                 mling_documents[l].append(m_doc[l])
-    print("\rProcessed %d/%d documents, valid %d/%d" % (d, len(multi_docs), valid_documents, len(multi_docs)), end="\n")
+        except MinWordsNotReached:
+            minwords_exception += 1
+            if deletions: os.remove(doc_path)
+        except WrongDocumentFormat:
+            wrongdoc_exception += 1
+            if deletions: os.remove(doc_path)
+        if max_documents>0 and valid_documents>=max_documents:
+            break
 
     return mling_documents, valid_documents
 
 if __name__ == "__main__":
 
-    #storage_path = "/media/moreo/1TB Volume/Datasets/Multilingual/Wikipedia"
+    storage_path = "/media/moreo/1TB Volume/Datasets/Multilingual/Wikipedia"
     #storage_path = "/home/data/wikipedia"
     #storage_path = "/Users/moreo/cl-esa-p/storage"
 
 
-    from data.languages import JRC_LANGS_WITH_NLTK_STEMMING as langs
+    #from data.languages import JRC_LANGS_WITH_NLTK_STEMMING as langs
+    from data.languages import FIVE_LANGS as langs
     #from jrcacquis_reader import LANGS as langs
     langs = frozenset(langs)
 
@@ -337,14 +353,15 @@ if __name__ == "__main__":
     #_, inv_dict = extract_multilingual_titles_from_simplefile(storage_path,
     #           'extraction_da_de_en_es_fi_fr_hu_it_nl_pt_ro_sv.IN_ANY_LANG.simple.bz2', langs, policy='IN_ALL_LANGS')
 
+    # wikipedia_home = "/home/data/wikipedia"
+    wikipedia_home = "/media/moreo/1TB Volume/Datasets/Multilingual/Wikipedia"
+    #storage_dir = '/home/moreo/CLESA/cl-esa-p/storage/'
+    pickle_name = 'extraction_de_en_es_fr_it.IN_ALL_LANGS.multi_invdict.pickle'
+    print('Pickle load of %s' % join(wikipedia_home, pickle_name))
+    inv_dict = pickle.load(open(join(wikipedia_home, pickle_name), 'rb'))
 
-    storage_dir = '/home/moreo/CLESA/cl-esa-p/storage/'
-    pickle_name = 'extraction_da_de_en_es_fi_fr_hu_it_nl_pt_ro_sv.IN_ALL_LANGS.multi_invdict.pickle'
-    inv_dict = pickle.load(open(join(storage_dir, pickle_name), 'rb'))
-
-    wikipedia_home = "/home/data/wikipedia"
     extract_multilingual_documents(inv_dict, langs, join(wikipedia_home,'text'),
-                                   out_path=join(storage_dir, 'multilingual_docs_JRC_NLTK'))
+                                   out_path=join(wikipedia_home, 'multilingual_docs_FIVE_LANGS'))
 
     #langs = ["en", "it", "es"]
     #wiki_multi_path = join(storage_path, "multilingual_docs")

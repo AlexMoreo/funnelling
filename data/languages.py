@@ -23,7 +23,7 @@ sl = Slovene
 sv = Swedish
 """
 
-JRC_LANGS_WITH_NLTK_STEMMING = ['da', 'nl', 'en', 'fi', 'fr', 'de', 'hu', 'it', 'pt', 'ro', 'es', 'sv']
+JRC_LANGS_WITH_NLTK_STEMMING = ['da', 'nl', 'en', 'fi', 'fr', 'de', 'hu', 'it', 'pt', 'es', 'sv'] # 'romanian deleted for incompatibility issues'
 
 NLTK_LANGMAP = {'da': 'danish', 'nl': 'dutch', 'en': 'english', 'fi': 'finnish', 'fr': 'french', 'de': 'german',
                 'hu': 'hungarian', 'it': 'italian', 'pt': 'portuguese', 'ro': 'romanian', 'es': 'spanish', 'sv': 'swedish'}
@@ -34,5 +34,9 @@ NLTK_LANGMAP = {'da': 'danish', 'nl': 'dutch', 'en': 'english', 'fi': 'finnish',
 #all languages in JRC-acquis v3
 JRC_LANGS = ['bg','cs','da','de','el','en','es','et','fi','fr','hu','it','lt','lv','mt','nl','pl','pt','ro','sk','sl','sv']
 
-lang_set = {'JRC_NLTK':JRC_LANGS_WITH_NLTK_STEMMING, 'JRC':JRC_LANGS, 'DEBUG':['en', 'es', 'it']}
+EN_IT_ES = ['en', 'it', 'es']
+ES_IT = ['es','it']
+FIVE_LANGS = ['en', 'it', 'es', 'fr', 'de']
+
+lang_set = {'JRC_NLTK':JRC_LANGS_WITH_NLTK_STEMMING, 'JRC':JRC_LANGS, 'ES_IT':ES_IT, 'EN_IT_ES':EN_IT_ES, 'FIVE_LANGS':FIVE_LANGS}
 
