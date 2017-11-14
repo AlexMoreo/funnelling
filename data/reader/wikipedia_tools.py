@@ -29,6 +29,7 @@ This tools help you in:
     Set the policy = "IN_ALL_LANGS" will extract only titles which appear in all (AND) languages, whereas "IN_ANY_LANG"
     extract all titles appearing in at least one (OR) language (warning: this will creates a huge dictionary).
     Note: This version is quite slow. Although it is run once for all, you might be interested in taking a look at "Wikidata in BigQuery".
+    - Process the huge json file as a stream a create a simplified file which occupies much less and is far faster to be processed.
     - Use the multilingual map to extract, from the clean text versions, individual xml documents containing all
     language-specific versions from the document.
     - Fetch the multilingual documents to create, for each of the specified languages, a list containing all documents,
@@ -105,14 +106,15 @@ def extract_multilingual_documents(inv_dict, langs, text_path, out_path):
             if not re.match('[A-Za-z]+', title):
                 print("Title <%s> for lang <%s> not in dictionary" % (title, lang))
 
+"""
+# too slow...
 def extract_multilingual_titles_from_json(data_dir, langs, policy="IN_ALL_LANGS", return_both=True):
     json_file = "latest-all.json.bz2"  # in https://dumps.wikimedia.org/wikidatawiki/entities/latest-all.json.bz2
     latest_all_json_file = join(data_dir,json_file)
 
     if policy not in policies:
         raise ValueError("Policy %s not supported." % policy)
-    else:
-        print("extracting multilingual titles with policy %s (%s)" % (policy,' '.join(langs)))
+    print("extracting multilingual titles with policy %s (%s)" % (policy,' '.join(langs)))
 
     lang_prefix = list(langs)
     lang_prefix.sort()
@@ -127,59 +129,58 @@ def extract_multilingual_titles_from_json(data_dir, langs, policy="IN_ALL_LANGS"
             print("Pickled file found in %s. Loading inverse dictionary only." % pickle_invdict)
             return pickle.load(open(pickle_invdict, 'rb'))
 
-    else:
-        multiling_titles = {}
-        inv_dict = {lang:{} for lang in langs}
+    multiling_titles = {}
+    inv_dict = {lang:{} for lang in langs}
 
-        def process_entry(last, fo):
-            id = last["id"]
-            if id in multiling_titles:
-                raise ValueError("id <%s> already indexed" % id)
+    def process_entry(last, fo):
+        id = last["id"]
+        if id in multiling_titles:
+            raise ValueError("id <%s> already indexed" % id)
 
-            titles = None
-            if policy == "IN_ALL_LANGS" and langs.issubset(last["labels"].keys()):
-                titles = {lang: last["labels"][lang]["value"] for lang in langs}
-            elif policy == "IN_ANY_LANG":
-                titles = {lang: last["labels"][lang]["value"] for lang in langs if lang in last["labels"]}
+        titles = None
+        if policy == "IN_ALL_LANGS" and langs.issubset(last["labels"].keys()):
+            titles = {lang: last["labels"][lang]["value"] for lang in langs}
+        elif policy == "IN_ANY_LANG":
+            titles = {lang: last["labels"][lang]["value"] for lang in langs if lang in last["labels"]}
 
-            if titles:
-                multiling_titles[id] = titles
-                for lang, title in titles.items():
-                    if title in inv_dict[lang]:
-                        inv_dict[lang][title].append(id)
-                    inv_dict[lang][title] = [id]
-                fo.write((id+'\t'+'\t'.join([lang+':'+multiling_titles[id][lang] for lang in titles.keys()])+'\n').encode('utf-8'))
+        if titles:
+            multiling_titles[id] = titles
+            for lang, title in titles.items():
+                if title in inv_dict[lang]:
+                    inv_dict[lang][title].append(id)
+                inv_dict[lang][title] = [id]
+            fo.write((id+'\t'+'\t'.join([lang+':'+multiling_titles[id][lang] for lang in titles.keys()])+'\n').encode('utf-8'))
 
-        _open = BZ2File if latest_all_json_file.endswith(".bz2") else open
-        with _open(latest_all_json_file, 'r', buffering=1024*1024*16) as fi, \
-                open(join(data_dir,pickle_prefix+".simple.txt"),'w') as fo:
-            builder = ObjectBuilder()
-            completed = 0
-            for event, value in ijson.basic_parse(fi, buf_size=1024*1024*16):
-                 builder.event(event, value)
-                 if len(builder.value)>1:
-                    process_entry(builder.value.pop(0), fo)
-                    completed += 1
-                    print("\rCompleted %d\ttitles %d" % (completed,len(multiling_titles)), end="")
-            print("")
+    _open = BZ2File if latest_all_json_file.endswith(".bz2") else open
+    with _open(latest_all_json_file, 'r', buffering=1024*1024*16) as fi, \
+            open(join(data_dir,pickle_prefix+".simple.txt"),'w') as fo:
+        builder = ObjectBuilder()
+        completed = 0
+        for event, value in ijson.basic_parse(fi, buf_size=1024*1024*16):
+             builder.event(event, value)
+             if len(builder.value)>1:
+                process_entry(builder.value.pop(0), fo)
+                completed += 1
+                print("\rCompleted %d\ttitles %d" % (completed,len(multiling_titles)), end="")
+        print("")
 
-            #process the last entry
-            process_entry(builder.value.pop(0))
+        #process the last entry
+        process_entry(builder.value.pop(0))
 
-            print("Pickling dictionaries in %s" % data_dir)
-            pickle.dump(multiling_titles, open(pickle_dict,'wb'), pickle.HIGHEST_PROTOCOL)
-            pickle.dump(inv_dict, open(pickle_invdict, 'wb'), pickle.HIGHEST_PROTOCOL)
-            print("Done")
+        print("Pickling dictionaries in %s" % data_dir)
+        pickle.dump(multiling_titles, open(pickle_dict,'wb'), pickle.HIGHEST_PROTOCOL)
+        pickle.dump(inv_dict, open(pickle_invdict, 'wb'), pickle.HIGHEST_PROTOCOL)
+        print("Done")
 
-        return (multiling_titles, inv_dict) if return_both else inv_dict
+    return (multiling_titles, inv_dict) if return_both else inv_dict
+"""
 
 def extract_multilingual_titles_from_simplefile(data_dir, filename, langs, policy="IN_ALL_LANGS", return_both=True):
     simplified_file = join(data_dir,filename)
 
     if policy not in policies:
         raise ValueError("Policy %s not supported." % policy)
-    else:
-        print("extracting multilingual titles with policy %s (%s)" % (policy,' '.join(langs)))
+    print("extracting multilingual titles with policy %s (%s)" % (policy,' '.join(langs)))
 
     lang_prefix = list(langs)
     lang_prefix.sort()
@@ -194,63 +195,60 @@ def extract_multilingual_titles_from_simplefile(data_dir, filename, langs, polic
             print("Pickled file found in %s. Loading inverse dictionary only." % pickle_invdict)
             return pickle.load(open(pickle_invdict, 'rb'))
 
-    else:
-        multiling_titles = {}
-        inv_dict = {lang:{} for lang in langs}
+    multiling_titles = {}
+    inv_dict = {lang:{} for lang in langs}
 
-        def process_entry(line):
-            parts = line.strip().split('\t')
-            id = parts[0]
-            if id in multiling_titles:
-                raise ValueError("id <%s> already indexed" % id)
+    def process_entry(line):
+        parts = line.strip().split('\t')
+        id = parts[0]
+        if id in multiling_titles:
+            raise ValueError("id <%s> already indexed" % id)
 
-            titles = dict(((lang_title[:lang_title.find(':')],lang_title[lang_title.find(':')+1:].decode('utf-8')) for lang_title in parts[1:]))
-            for lang in titles.keys():
-                if lang not in langs:
-                    del titles[lang]
+        titles = dict(((lang_title[:lang_title.find(':')],lang_title[lang_title.find(':')+1:].decode('utf-8')) for lang_title in parts[1:]))
+        for lang in titles.keys():
+            if lang not in langs:
+                del titles[lang]
 
-            if (policy == "IN_ALL_LANGS" and len(titles) == len(langs))\
-                    or (policy == "IN_ANY_LANG" and len(titles) > 0):
-                multiling_titles[id] = titles
-                for lang, title in titles.items():
-                    if title in inv_dict[lang]:
-                        inv_dict[lang][title].append(id)
-                    inv_dict[lang][title] = [id]
+        if (policy == "IN_ALL_LANGS" and len(titles) == len(langs))\
+                or (policy == "IN_ANY_LANG" and len(titles) > 0):
+            multiling_titles[id] = titles
+            for lang, title in titles.items():
+                if title in inv_dict[lang]:
+                    inv_dict[lang][title].append(id)
+                inv_dict[lang][title] = [id]
 
-        _open = BZ2File if simplified_file.endswith(".bz2") else open
-        with _open(simplified_file, 'r', buffering=1024*1024*16) as fi:
-            completed = 0
-            try:
-                for line in fi:
-                    process_entry(line)
-                    completed += 1
-                    if completed % 10 == 0:
-                        print("\rCompleted %d\ttitles %d" % (completed,len(multiling_titles)), end="")
-                print("\rCompleted %d\t\ttitles %d" % (completed, len(multiling_titles)), end="\n")
-            except EOFError:
-                print("\nUnexpected file ending... saving anyway")
+    with BZ2File(simplified_file, 'r', buffering=1024*1024*16) as fi:
+        completed = 0
+        try:
+            for line in fi:
+                process_entry(line)
+                completed += 1
+                if completed % 10 == 0:
+                    print("\rCompleted %d\ttitles %d" % (completed,len(multiling_titles)), end="")
+            print("\rCompleted %d\t\ttitles %d" % (completed, len(multiling_titles)), end="\n")
+        except EOFError:
+            print("\nUnexpected file ending... saving anyway")
 
-            print("Pickling dictionaries in %s" % data_dir)
-            pickle.dump(multiling_titles, open(pickle_dict,'wb'), pickle.HIGHEST_PROTOCOL)
-            pickle.dump(inv_dict, open(pickle_invdict, 'wb'), pickle.HIGHEST_PROTOCOL)
-            print("Done")
+        print("Pickling dictionaries in %s" % data_dir)
+        pickle.dump(multiling_titles, open(pickle_dict,'wb'), pickle.HIGHEST_PROTOCOL)
+        pickle.dump(inv_dict, open(pickle_invdict, 'wb'), pickle.HIGHEST_PROTOCOL)
+        print("Done")
 
-        return (multiling_titles, inv_dict) if return_both else inv_dict
+    return (multiling_titles, inv_dict) if return_both else inv_dict
 
 
-def simplify_json_file(data_dir, langs, policy="IN_ALL_LANGS"):
-    json_file = "latest-all.json.bz2"  # in https://dumps.wikimedia.org/wikidatawiki/entities/latest-all.json.bz2
+# in https://dumps.wikimedia.org/wikidatawiki/entities/latest-all.json.bz2
+def simplify_json_file(data_dir, langs, policy="IN_ALL_LANGS", json_file = "latest-all.json.bz2"):
     latest_all_json_file = join(data_dir,json_file)
 
     if policy not in policies:
         raise ValueError("Policy %s not supported." % policy)
-    else:
-        print("extracting multilingual titles with policy %s (%s)" % (policy,' '.join(langs)))
+
+    print("extracting multilingual titles with policy %s (%s)" % (policy,' '.join(langs)))
 
     lang_prefix = list(langs)
     lang_prefix.sort()
     simple_titles_path = join(data_dir, "extraction_" + "_".join(lang_prefix) + "." + policy)
-
 
     def process_entry(last, fo):
         global written
@@ -268,8 +266,7 @@ def simplify_json_file(data_dir, langs, policy="IN_ALL_LANGS"):
             return False
 
     written = 0
-    _open = BZ2File if latest_all_json_file.endswith(".bz2") else open
-    with _open(latest_all_json_file, 'r', buffering=1024*1024*16) as fi, \
+    with BZ2File(latest_all_json_file, 'r', buffering=1024*1024*16) as fi, \
             BZ2File(join(data_dir,simple_titles_path+".simple.bz2"),'w') as fo:
         builder = ObjectBuilder()
         completed = 0
@@ -295,23 +292,30 @@ class WrongDocumentFormat(Exception): pass
 
 def _load_multilang_doc(path, langs, min_words=100):
     import xml.etree.ElementTree as ET
-    from xml.etree.ElementTree import Element
-    root = ET.parse(path).getroot()
-    doc = {}
-    for lang in langs:
-        doc_body = root.find('.//doc[@lang="' + lang + '"]')
-        if isinstance(doc_body, Element):
-            n_words = len(doc_body.text.split(' '))
-            if n_words >= min_words:
-                doc[lang] = doc_body.text
+    from xml.etree.ElementTree import Element, ParseError
+    try:
+        root = ET.parse(path).getroot()
+        doc = {}
+        for lang in langs:
+            doc_body = root.find('.//doc[@lang="' + lang + '"]')
+            if isinstance(doc_body, Element):
+                n_words = len(doc_body.text.split(' '))
+                if n_words >= min_words:
+                    doc[lang] = doc_body.text
+                else:
+                    raise MinWordsNotReached
             else:
-                raise MinWordsNotReached
-        else:
-            raise WrongDocumentFormat
+                raise WrongDocumentFormat
+    except ParseError:
+        raise WrongDocumentFormat
     return doc
 
 #returns the multilingual documents mapped by language, and a counter with the number of documents readed
-def fetch_wikipedia_multilingual(wiki_multi_path, langs, min_words=100, deletions=False, max_documents=-1):
+def fetch_wikipedia_multilingual(wiki_multi_path, langs, min_words=100, deletions=False, max_documents=-1, pickle_name=None):
+    if pickle_name and os.path.exists(pickle_name):
+        print("unpickling %s" % pickle_name)
+        return pickle.load(open(pickle_name, 'rb'))
+
     multi_docs = list_files(wiki_multi_path)
     mling_documents = {l:[] for l in langs}
     valid_documents = 0
@@ -335,7 +339,11 @@ def fetch_wikipedia_multilingual(wiki_multi_path, langs, min_words=100, deletion
         if max_documents>0 and valid_documents>=max_documents:
             break
 
-    return mling_documents, valid_documents
+    if pickle_name:
+        print("Pickling wikipedia documents object in %s" % pickle_name)
+        pickle.dump(mling_documents, open(pickle_name, 'wb'), pickle.HIGHEST_PROTOCOL)
+
+    return mling_documents
 
 if __name__ == "__main__":
 

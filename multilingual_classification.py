@@ -176,8 +176,8 @@ if __name__ == "__main__":
         # ESA Spanish: Test scores: 0.569 macro-f1, 0.762 micro-f1 [wikidocs = 10000 random]
 
     elif mode == "CL-ESA":
-        tr_lang = ['es','it']
-        te_lang = 'it'
+        tr_lang = ['es', 'es']
+        te_lang = 'es'
         n_wiki_docs = 10000
         print("Running CL-ESA transformation from source lang %s to target lang %s" % (tr_lang, te_lang))
         #wiki_doc_selection_h1(n_wiki_docs=n_wiki_docs, clesa_data=clesa_data)
@@ -188,18 +188,18 @@ if __name__ == "__main__":
         print("\ttrain %s:%s" % (str([clesa_data.lXtr[tr_l].shape for tr_l in tr_lang]), str([clesa_data.lYtr[tr_l].shape for tr_l in tr_lang])))
         print("\ttest  %s:%s" % (str(clesa_data.lXte[te_lang].shape), str(clesa_data.lYte[te_lang].shape)))
         print("\twiki (S/T) %s:%s" % (str([clesa_data.lW[tr_l].shape for tr_l in tr_lang]), str(clesa_data.lW[te_lang].shape)))
-        for tr_l in tr_lang:
-            rrobin = fit_round_robin(clesa_data.lXtr[tr_l], clesa_data.lYtr[tr_l], k=10000,
-                                     features_rank_pickle_path=join(jrcacquis_datapath, dataset + "_" + tr_l + "X" + str(
-                                         clesa_data.lXtr[tr_l].shape) + "_Y" + str(
-                                         clesa_data.lYtr[tr_l].shape) + ".pickle"))
-            clesa_data.lXtr[tr_l] = rrobin.transform(clesa_data.lXtr[tr_l])
-            clesa_data.lW[tr_l] = rrobin.transform(clesa_data.lW[tr_l])
-            if tr_l in [te_lang]:
-                clesa_data.lXte[tr_l] = rrobin.transform(clesa_data.lXte[tr_l])
-        print("\ttrain %s:%s" % (str([clesa_data.lXtr[tr_l].shape for tr_l in tr_lang]), str([clesa_data.lYtr[tr_l].shape for tr_l in tr_lang])))
-        print("\ttest  %s:%s" % (str(clesa_data.lXte[te_lang].shape), str(clesa_data.lYte[te_lang].shape)))
-        print("\twiki (S/T) %s:%s" % (str([clesa_data.lW[tr_l].shape for tr_l in tr_lang]), str(clesa_data.lW[te_lang].shape)))
+        # for tr_l in tr_lang:
+        #     rrobin = fit_round_robin(clesa_data.lXtr[tr_l], clesa_data.lYtr[tr_l], k=10000,
+        #                              features_rank_pickle_path=join(jrcacquis_datapath, dataset + "_" + tr_l + "X" + str(
+        #                                  clesa_data.lXtr[tr_l].shape) + "_Y" + str(
+        #                                  clesa_data.lYtr[tr_l].shape) + ".pickle"))
+        #     clesa_data.lXtr[tr_l] = rrobin.transform(clesa_data.lXtr[tr_l])
+        #     clesa_data.lW[tr_l] = rrobin.transform(clesa_data.lW[tr_l])
+        #     if tr_l in [te_lang]:
+        #         clesa_data.lXte[tr_l] = rrobin.transform(clesa_data.lXte[tr_l])
+        # print("\ttrain %s:%s" % (str([clesa_data.lXtr[tr_l].shape for tr_l in tr_lang]), str([clesa_data.lYtr[tr_l].shape for tr_l in tr_lang])))
+        # print("\ttest  %s:%s" % (str(clesa_data.lXte[te_lang].shape), str(clesa_data.lYte[te_lang].shape)))
+        # print("\twiki (S/T) %s:%s" % (str([clesa_data.lW[tr_l].shape for tr_l in tr_lang]), str(clesa_data.lW[te_lang].shape)))
 
         clesa = CLESA(similarity='cosine', centered=False, post_norm=False)
         #clesa = CLESA_PPindex(2)

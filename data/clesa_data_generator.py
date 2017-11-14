@@ -186,8 +186,8 @@ def clesa_data_generator(dataset, langs, tr_years, te_years, jrcacquis_datapath,
         te_request = as_lang_dict(te_request, langs, force_parallel)
 
     print("Fetching Wikipedia multilingual documents...")
-    wiki_docs, n_pivots = fetch_wikipedia_multilingual(wikipedia_datapath, langs, min_words=100, deletions=True)
-    if n_pivots == 0:
+    wiki_docs = fetch_wikipedia_multilingual(wikipedia_datapath, langs, min_words=100, deletions=True)
+    if len(wiki_docs) == 0:
         raise ValueError("Wikipedia documents were not loaded correctly.")
 
     for lang in langs:
@@ -201,7 +201,6 @@ def clesa_data_generator(dataset, langs, tr_years, te_years, jrcacquis_datapath,
         W = tfidf.fit_transform(wiki_docs[lang])
         Xtr = tfidf.transform(tr_data)
         Xte = tfidf.transform(te_data)
-
 
         # XWtr= tfidf.fit_transform(list(tr_data)+wiki_docs[lang])
         # Xte = tfidf.transform(te_data)

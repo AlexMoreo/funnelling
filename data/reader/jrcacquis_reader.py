@@ -13,6 +13,7 @@ import zipfile
 from data.languages import JRC_LANGS
 
 """
+JRC Acquis' Nomenclature:
 bg = Bulgarian
 cs = Czech
 da = Danish
@@ -37,7 +38,6 @@ sl = Slovene
 sv = Swedish
 """
 
-
 class JRCAcquis_Document:
     def __init__(self, id, name, lang, year, head, body, categories):
         self.id = id
@@ -50,15 +50,10 @@ class JRCAcquis_Document:
 # this is a workaround... for some reason, acutes are codified in a non-standard manner in titles
 # however, it seems that the title is often appearing as the first paragraph in the text/body (with
 # standard codification), so it might be preferable not to read the header after all (as here by default)
-def proc_acute(text):
+def _proc_acute(text):
     for ch in ['a','e','i','o','u']:
         text = text.replace('%'+ch+'acute%',ch)
     return text
-
-def raise_if_empty(field, from_file):
-    if isinstance(field, str):
-        if not field.strip():
-            raise ValueError("Error, field empty in file %s" % from_file)
 
 def parse_document(file, year, head=False):
     root = ET.parse(file).getroot()
@@ -67,8 +62,13 @@ def parse_document(file, year, head=False):
     doc_lang = root.attrib['lang'] # e.g., 'es'
     doc_id   = root.attrib['id'] # e.g., 'jrc22006A0211_01-es'
     doc_categories = [cat.text for cat in root.findall('.//teiHeader/profileDesc/textClass/classCode[@scheme="eurovoc"]')]
-    doc_head = proc_acute(root.find('.//text/body/head').text) if head else ''
+    doc_head = _proc_acute(root.find('.//text/body/head').text) if head else ''
     doc_body = '\n'.join([p.text for p in root.findall('.//text/body/div[@type="body"]/p')])
+
+    def raise_if_empty(field, from_file):
+        if isinstance(field, str):
+            if not field.strip():
+                raise ValueError("Empty field in file %s" % from_file)
 
     raise_if_empty(doc_name, file)
     raise_if_empty(doc_lang, file)
@@ -106,7 +106,7 @@ def _filter_by_category(doclist, cat_filter):
 
 #filters out categories with less than cat_threshold documents (and filters documents containing those categories)
 def _filter_by_frequency(doclist, cat_threshold):
-    if cat_threshold == 0:
+    if cat_threshold <= 0:
         return doclist, cat_threshold
 
     cat_count = {}
@@ -121,7 +121,7 @@ def _filter_by_frequency(doclist, cat_threshold):
     return _filter_by_category(doclist, freq_categories), freq_categories
 
 
-def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=True, cat_filter=None, cat_threshold=0, force_parallel=False):
+def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=True, cat_filter=None, cat_threshold=0, force_parallel=False, DOWNLOAD_URL_BASE = 'http://optima.jrc.it/Acquis/JRC-Acquis.3.0/corpus/'):
     if not langs:
         langs = JRC_LANGS
     else:
@@ -137,10 +137,8 @@ def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=
         os.mkdir(data_path)
 
     request = []
-    DOWNLOAD_URL_BASE = 'http://optima.jrc.it/Acquis/JRC-Acquis.3.0/corpus/'
     total_read = 0
     for l in langs:
-
         file_name = 'jrc-'+l+'.tgz'
         archive_path = join(data_path, file_name)
 
@@ -194,20 +192,22 @@ def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=
         request, final_cats = _filter_by_frequency(request, cat_threshold)
     return request, final_cats
 
+# inspects the Eurovoc thesaurus in order to select a subset of categories
+# currently, only 'broadest' policy (i.e., take all categories with no parent category) is implemented
 def inspect_eurovoc(data_path, eurovoc_skos_core_concepts_filename='eurovoc_in_skos_core_concepts.rdf', pickle_name=None,
                     eurovoc_url="http://publications.europa.eu/mdr/resource/thesaurus/eurovoc-20160630-0/skos/eurovoc_in_skos_core_concepts.zip",
                     select="broadest"):
+
     if pickle_name:
         fullpath_pickle = join(data_path, pickle_name)
         if os.path.exists(fullpath_pickle):
             print("Pickled object found in %s. Loading it." % fullpath_pickle)
             return pickle.load(open(fullpath_pickle,'rb'))
 
-
     fullpath = join(data_path, eurovoc_skos_core_concepts_filename)
     if not os.path.exists(fullpath):
         print("Path %s does not exist. Trying to download the skos EuroVoc file from %s" % (data_path, eurovoc_url))
-        download_file(eurovoc_url, data_path + '.zip')
+        download_file(eurovoc_url, fullpath)
         print("Unzipping file...")
         zipped = zipfile.ZipFile(data_path + '.zip', 'r')
         zipped.extract("eurovoc_in_skos_core_concepts.rdf", data_path)
