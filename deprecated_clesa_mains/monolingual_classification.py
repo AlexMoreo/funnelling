@@ -1,4 +1,4 @@
-from data.clesa_data_generator import *
+from data._clesa_data_generator import *
 from data.languages import *
 from model.clesa import ESA, ESA_PPindex
 from sklearn.multiclass import OneVsRestClassifier
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     print("Running Monolingual ESA transformation for lang %s" % lang)
 
     for use_distributional_heuristic in [True]:
-        esa = ESA(similarity='dot', centered=False, post_norm=False, distributional_aware=use_distributional_heuristic)
+        esa = ESA(similarity='dot', centered=False, post=False, distributional_aware=use_distributional_heuristic)
         #esa = ESA_PPindex(num_permutations=5, similarity='cosine', centered=False, post_norm=False)
         Xtr_ = esa.fit_transform(W, Xtr)
         Xte_ = esa.transform(Xte)

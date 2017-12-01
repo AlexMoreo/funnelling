@@ -4,13 +4,15 @@ from os.path import join
 import tarfile
 import xml.etree.ElementTree as ET
 from sklearn.datasets import get_data_home
-import cPickle as pickle
+import pickle
 from util.file import download_file, list_dirs, list_files
 import rdflib
 from rdflib.namespace import RDF, SKOS
 from rdflib import URIRef
 import zipfile
 from data.languages import JRC_LANGS
+from collections import Counter
+from random import shuffle
 
 """
 JRC Acquis' Nomenclature:
@@ -81,17 +83,25 @@ def parse_document(file, year, head=False):
 # removes documents without a counterpart in all other languages
 def _force_parallel(doclist, langs):
     n_langs = len(langs)
-    par_id_count = {}
-    for d in doclist:
-        try:
-            par_id_count[d.parallel_id] = 1+par_id_count[d.parallel_id]
-        except KeyError:
-            par_id_count[d.parallel_id] = 1
-    incomplete_ids = set([id for id,count in par_id_count.items() if count<n_langs])
-    return [doc for doc in doclist if doc.parallel_id not in incomplete_ids]
+    par_id_count = Counter([d.parallel_id for d in doclist])
+    parallel_doc_ids = set([id for id,count in par_id_count.items() if count==n_langs])
+    return [doc for doc in doclist if doc.parallel_id in parallel_doc_ids]
+
+def _random_sampling_avoiding_parallel(doclist):
+    random_order = list(range(len(doclist)))
+    shuffle(random_order)
+    sampled_request = []
+    parallel_ids = set()
+    for ind in random_order:
+        pid = doclist[ind].parallel_id
+        if pid not in parallel_ids:
+            sampled_request.append(doclist[ind])
+            parallel_ids.add(pid)
+    print('random_sampling_no_parallel:: from {} documents to {} documents'.format(len(doclist), len(sampled_request)))
+    return sampled_request
 
 
-#filters out documents which do not contain any category in the cat_filter list
+#filters out documents which do not contain any category in the cat_filter list, and filter all labels not in cat_filter
 def _filter_by_category(doclist, cat_filter):
     if not isinstance(cat_filter, frozenset):
         cat_filter = frozenset(cat_filter)
@@ -106,22 +116,18 @@ def _filter_by_category(doclist, cat_filter):
 
 #filters out categories with less than cat_threshold documents (and filters documents containing those categories)
 def _filter_by_frequency(doclist, cat_threshold):
-    if cat_threshold <= 0:
-        return doclist, cat_threshold
-
-    cat_count = {}
+    cat_count = Counter()
     for d in doclist:
-        for c in d.categories:
-            if c not in cat_count:
-                cat_count[c] = 0
-            cat_count[c] += 1
+        cat_count.update(d.categories)
 
     freq_categories = [cat for cat,count in cat_count.items() if count>cat_threshold]
     freq_categories.sort()
     return _filter_by_category(doclist, freq_categories), freq_categories
 
 
-def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=True, cat_filter=None, cat_threshold=0, force_parallel=False, DOWNLOAD_URL_BASE = 'http://optima.jrc.it/Acquis/JRC-Acquis.3.0/corpus/'):
+def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=True, cat_filter=None, cat_threshold=0,
+                    parallel=None, DOWNLOAD_URL_BASE ='http://optima.jrc.it/Acquis/JRC-Acquis.3.0/corpus/'):
+    assert parallel in [None, 'force', 'avoid'], 'parallel mode not supported'
     if not langs:
         langs = JRC_LANGS
     else:
@@ -185,24 +191,35 @@ def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=
         print("Read %d documents for language %s\n" % (read, l))
         total_read += read
     print("Read %d documents in total" % (total_read))
-    if force_parallel:
+
+    if parallel=='force':
         request = _force_parallel(request, langs)
+    elif parallel == 'avoid':
+        request = _random_sampling_avoiding_parallel(request)
+
     if cat_filter:
         request = _filter_by_category(request, cat_filter)
-        request, final_cats = _filter_by_frequency(request, cat_threshold)
+        final_cats = list(cat_filter)
+        if cat_threshold > 0:
+            request, final_cats = _filter_by_frequency(request, cat_threshold)
+    else:
+        final_cats = set()
+        for d in request:
+            final_cats.update(d.categories)
+        final_cats = list(final_cats)
+
     return request, final_cats
 
 # inspects the Eurovoc thesaurus in order to select a subset of categories
-# currently, only 'broadest' policy (i.e., take all categories with no parent category) is implemented
-def inspect_eurovoc(data_path, eurovoc_skos_core_concepts_filename='eurovoc_in_skos_core_concepts.rdf', pickle_name=None,
+# currently, only 'broadest' policy (i.e., take all categories with no parent category), and 'all' is implemented
+def inspect_eurovoc(data_path, eurovoc_skos_core_concepts_filename='eurovoc_in_skos_core_concepts.rdf',
                     eurovoc_url="http://publications.europa.eu/mdr/resource/thesaurus/eurovoc-20160630-0/skos/eurovoc_in_skos_core_concepts.zip",
                     select="broadest"):
 
-    if pickle_name:
-        fullpath_pickle = join(data_path, pickle_name)
-        if os.path.exists(fullpath_pickle):
-            print("Pickled object found in %s. Loading it." % fullpath_pickle)
-            return pickle.load(open(fullpath_pickle,'rb'))
+    fullpath_pickle = join(data_path, select+'_concepts.pickle')
+    if os.path.exists(fullpath_pickle):
+        print("Pickled object found in %s. Loading it." % fullpath_pickle)
+        return pickle.load(open(fullpath_pickle,'rb'))
 
     fullpath = join(data_path, eurovoc_skos_core_concepts_filename)
     if not os.path.exists(fullpath):
@@ -217,18 +234,24 @@ def inspect_eurovoc(data_path, eurovoc_skos_core_concepts_filename='eurovoc_in_s
     g = rdflib.Graph()
     g.parse(location=fullpath, format="application/rdf+xml")
 
-    if select=="broadest":
+    if select == "all":
+        print("Selecting all concepts")
+        all_concepts = list(g.subjects(RDF.type, SKOS.Concept))
+        all_concepts = [c.toPython().split('/')[-1] for c in all_concepts]
+        all_concepts.sort()
+        selected_concepts = all_concepts
+    elif select=="broadest":
         print("Selecting broadest concepts (those without any other broader concept linked to it)")
         all_concepts = set(g.subjects(RDF.type, SKOS.Concept))
         narrower_concepts = set(g.subjects(SKOS.broader, None))
         broadest_concepts = [c.toPython().split('/')[-1] for c in (all_concepts - narrower_concepts)]
         broadest_concepts.sort()
-
-        print("%d broad concepts found" % len(broadest_concepts))
-        if pickle_name:
-            print("Pickling concept list for faster further requests in %s" % fullpath_pickle)
-            pickle.dump(broadest_concepts, open(fullpath_pickle,'wb'), pickle.HIGHEST_PROTOCOL)
-        return broadest_concepts
+        selected_concepts = broadest_concepts
     else:
         raise ValueError("Selection policy %s is not currently supported" % select)
 
+    print("%d broad concepts found" % len(selected_concepts))
+    print("Pickling concept list for faster further requests in %s" % fullpath_pickle)
+    pickle.dump(selected_concepts, open(fullpath_pickle, 'wb'), pickle.HIGHEST_PROTOCOL)
+
+    return selected_concepts

@@ -6,7 +6,7 @@ warnings.warn = warn
 import os
 from os.path import join
 from data.reader.jrcacquis_reader import fetch_jrcacquis, inspect_eurovoc
-import cPickle as pickle
+import pickle
 from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk import word_tokenize
 from nltk.stem import SnowballStemmer
@@ -24,13 +24,14 @@ Required nltk.download() packages:
     - stopwords
 """
 
-#Languages which can be stemmed by means of NLTK
+#Languages which can be stemmed by means of NLTK are:
 #danish dutch english finnish french german hungarian italian norwegian porter portuguese romanian russian spanish swedish
 
 JRC_ACQUIS = "JRCAcquis"
 DATASETS_SUPPORTED = [JRC_ACQUIS]
 
 class CLESA_Data:
+
     def __init__(self, tr_years=None, te_years=None, langmap='Unknown', notes=""):
         self.lXtr={}
         self.lYtr={}
@@ -134,27 +135,7 @@ def as_lang_dict(doc_list, langs, force_parallel):
     else:
         return {lang:[(d.text, d.categories) for d in doc_list if d.lang == lang] for lang in langs}
 
-class NLTKLemmaTokenizer(object):
 
-    def __init__(self, lang, verbose=False):
-        if lang not in NLTK_LANGMAP:
-            raise ValueError('Language %s is not supported in NLTK' % lang)
-        self.verbose=verbose
-        self.called = 0
-        self.wnl = SnowballStemmer(NLTK_LANGMAP[lang])
-        self.cache = {}
-    def __call__(self, doc):
-        self.called += 1
-        if self.verbose and self.called%10==0:
-            print("\r\t\t[documents processed %d]" % (self.called), end="")
-        tokens = word_tokenize(doc)
-        stems = []
-        for t in tokens:
-            if t not in self.cache:
-                self.cache[t] = self.wnl.stem(t)
-            stems.append(self.cache[t])
-        return stems
-        #return [self.wnl.stem(t) for t in word_tokenize(doc)]
 
 def year_list_as_str(years):
     y_str = list(years)
@@ -175,8 +156,8 @@ def clesa_data_generator(dataset, langs, tr_years, te_years, jrcacquis_datapath,
     print("Fetching "+dataset+" data...")
     if dataset == JRC_ACQUIS:
         cat_list = inspect_eurovoc(jrcacquis_datapath, pickle_name="broadest_concepts.pickle")
-        tr_request, final_cats = fetch_jrcacquis(langs=langs, data_path=jrcacquis_datapath, years=tr_years, cat_filter=cat_list, cat_threshold=cat_threshold, force_parallel=force_parallel)
-        te_request, _ = fetch_jrcacquis(langs=langs, data_path=jrcacquis_datapath, years=te_years, cat_filter=final_cats, force_parallel=force_parallel)
+        tr_request, final_cats = fetch_jrcacquis(langs=langs, data_path=jrcacquis_datapath, years=tr_years, cat_filter=cat_list, cat_threshold=cat_threshold, parallel=force_parallel)
+        te_request, _ = fetch_jrcacquis(langs=langs, data_path=jrcacquis_datapath, years=te_years, cat_filter=final_cats, parallel=force_parallel)
 
         print("Training request length: %d" % len(tr_request))
         print("Test request length: %d" % len(te_request))

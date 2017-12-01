@@ -49,8 +49,10 @@ class ContTable:
         _c = 1.0*self.get_not_c()
         return self.fp / _c if _c > 0.0 else 0.0
 
+
 def accuracy(cell):
     return (cell.tp + cell.tn)*1.0 / (cell.tp + cell.fp + cell.fn + cell.tn)
+
 
 def f1(cell):
     num = 2.0 * cell.tp
@@ -59,14 +61,36 @@ def f1(cell):
     #we define f1 to be 1 if den==0 since the classifier has correctly classified all instances as negative
     return 1.0
 
+def K(cell):
+    specificity, recall = 0., 0.
+
+    AN = cell.tn + cell.fp
+    if AN != 0:
+        specificity = cell.tn*1. / AN
+
+    AP = cell.tp + cell.fn
+    if AP != 0:
+        recall = cell.tp*1. / AP
+
+    if AP == 0:
+        return 2. * specificity - 1.
+    elif AN == 0:
+        return 2. * recall - 1.
+    else:
+        return specificity + recall - 1.
+
+
+
 #true_labels and predicted_labels are two vectors of shape (number_documents,)
 def single_metric_statistics(true_labels, predicted_labels):
-    tp = sum([1 for x,y in zip(true_labels,predicted_labels) if x==y==1])
-    fp = sum([1 for x, y in zip(true_labels, predicted_labels) if x == 0 and y == 1])
-    fn = sum([1 for x, y in zip(true_labels, predicted_labels) if x == 1 and y == 0])
-    tn = sum([1 for x, y in zip(true_labels, predicted_labels) if x == 0 and y == 0])
-    if tp+fp+fn+tn != len(true_labels): raise ValueError("Format not consistent between true and predicted labels.")
+    assert len(true_labels)==len(predicted_labels), "Format not consistent between true and predicted labels."
+    nd = len(true_labels)
+    tp = np.sum(predicted_labels[true_labels==1])
+    fp = np.sum(predicted_labels[true_labels == 0])
+    fn = np.sum(true_labels[predicted_labels == 0])
+    tn = nd - (tp+fp+fn)
     return ContTable(tp=tp, tn=tn, fp=fp, fn=fn)
+
 
 #if the classifier is single class, then the prediction is a vector of shape=(nD,) which causes issues when compared
 #to the true labels (of shape=(nD,1)). This method increases the dimensions of the predictions.
@@ -81,29 +105,43 @@ def __check_consistency_and_adapt(true_labels, predictions):
     _,nC = true_labels.shape
     return true_labels, predictions, nC
 
-#true_labels and predicted_labels are two matrices in sklearn.preprocessing.MultiLabelBinarizer format
-def macroF1(true_labels, predicted_labels):
+
+def macro_average(true_labels, predicted_labels, metric):
     true_labels, predicted_labels, nC = __check_consistency_and_adapt(true_labels, predicted_labels)
+    return np.mean([metric(single_metric_statistics(true_labels[:, c], predicted_labels[:, c])) for c in range(nC)])
 
-    macrof1 = 0.0
-    for c in range(nC):
-        macrof1 += f1(single_metric_statistics(true_labels[:,c], predicted_labels[:,c]))
 
-    return macrof1/nC
-
-#true_labels and predicted_labels are two matrices in sklearn.preprocessing.MultiLabelBinarizer format
-def microF1(true_labels, predicted_labels):
+def micro_average(true_labels, predicted_labels, metric):
     true_labels, predicted_labels, nC = __check_consistency_and_adapt(true_labels, predicted_labels)
 
     def aggregate_cell(accum, other):
-        accum.tp+=other.tp
-        accum.fp+=other.fp
-        accum.fn+=other.fn
-        accum.tn+=other.tn
+        accum.tp += other.tp
+        accum.fp += other.fp
+        accum.fn += other.fn
+        accum.tn += other.tn
 
     accum = ContTable()
     for c in range(nC):
         aggregate_cell(accum, single_metric_statistics(true_labels[:, c], predicted_labels[:, c]))
 
-    return f1(accum)
+    return metric(accum)
+
+
+#true_labels and predicted_labels are two matrices in sklearn.preprocessing.MultiLabelBinarizer format
+def macroF1(true_labels, predicted_labels):
+    return macro_average(true_labels,predicted_labels, f1)
+
+
+#true_labels and predicted_labels are two matrices in sklearn.preprocessing.MultiLabelBinarizer format
+def microF1(true_labels, predicted_labels):
+    return micro_average(true_labels, predicted_labels, f1)
+
+#true_labels and predicted_labels are two matrices in sklearn.preprocessing.MultiLabelBinarizer format
+def macroK(true_labels, predicted_labels):
+    return macro_average(true_labels,predicted_labels, K)
+
+
+#true_labels and predicted_labels are two matrices in sklearn.preprocessing.MultiLabelBinarizer format
+def microK(true_labels, predicted_labels):
+    return micro_average(true_labels, predicted_labels, K)
 

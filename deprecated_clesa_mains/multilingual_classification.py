@@ -1,4 +1,4 @@
-from data.clesa_data_generator import *
+from data._clesa_data_generator import *
 from data.languages import *
 from model.clesa import CLESA, CLESA_PPindex
 from sklearn.multiclass import OneVsRestClassifier
@@ -201,7 +201,7 @@ if __name__ == "__main__":
         # print("\ttest  %s:%s" % (str(clesa_data.lXte[te_lang].shape), str(clesa_data.lYte[te_lang].shape)))
         # print("\twiki (S/T) %s:%s" % (str([clesa_data.lW[tr_l].shape for tr_l in tr_lang]), str(clesa_data.lW[te_lang].shape)))
 
-        clesa = CLESA(similarity='cosine', centered=False, post_norm=False)
+        clesa = CLESA(similarity='cosine', centered=False, post=False)
         #clesa = CLESA_PPindex(2)
         print("clesa projection")
         clesa.fit(clesa_data.lW)
