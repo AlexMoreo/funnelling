@@ -5,12 +5,16 @@ import time
 from model.clesa import CLESA
 from util.metrics import macroF1, microF1, macroK, microK
 from scipy.sparse import issparse
-from sklearn.svm import LinearSVC
+from sklearn.svm import LinearSVC, SVC
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import make_scorer
 from model.riboc import RandomIndexingBoC
 from model.dci import DistributionalCorrespondenceIndexing
+
+#TODO: class hierarchy inheritin from PolylingualClassifier
+#TODO: abstract evaluate as a function receiving a Polylingual Classifier and an array of metrics
+#TODO: abstract the base learning and grid-search for any learner (currently: wired to LinearSVC)
 
 class ClassEmbeddingPolylingualClassifier:
     """
@@ -18,9 +22,14 @@ class ClassEmbeddingPolylingualClassifier:
     decision score phi_l(d,ci) of an auxiliar classifier phi_l trained on category ci for documents in language l;
     then trains one single classifier for all documents in this space, irrespective of their originary language
     """
-    def __init__(self, parameters={'C': [1e2, 1e1, 1, 1e-1]}):
+    def __init__(self, parameters=None, z_parameters=None):
+        """
+        :param parameters: parameters for the learner in the doc_projector
+        :param z_parameters: parameters for the learner in the z-space
+        """
         self.parameters=parameters
-        self.doc_projector = NaivePolylingualClassifier(parameters=parameters)
+        self.z_parameters = z_parameters
+        self.doc_projector = NaivePolylingualClassifier(self.parameters)
 
     def fit(self, lX, ly, n_jobs=-1):
         tinit = time.time()
@@ -34,7 +43,7 @@ class ClassEmbeddingPolylingualClassifier:
         zy = np.vstack([ly[lang] for lang in langs])
 
         print('fitting the Z-space of shape={}'.format(Z.shape))
-        self.model = MonolingualClassifier(self.parameters)
+        self.model = MonolingualClassifier(self.z_parameters)
         self.model.fit(Z,zy)
         self.time = time.time() - tinit
         return self
@@ -59,7 +68,7 @@ class NaivePolylingualClassifier:
     """
     Is a mere set of independet MonolingualClassifiers
     """
-    def __init__(self, parameters={'C': [1e2, 1e1, 1, 1e-1]}):
+    def __init__(self, parameters=None):
         self.parameters = parameters
         self.model = None
 
@@ -104,12 +113,12 @@ class CLESAPolylingualClassifier:
     """
     A polylingual classifier based on the cross-lingual ESA method
     """
-    def __init__(self, lW, parameters={'C': [1e2, 1e1, 1, 1e-1]}, similarity='dot', post=False):
+    def __init__(self, lW, z_parameters=None, similarity='dot', post=False):
         """
         :param lW: a dictionary {lang : wikipedia doc-by-term matrix}
-        :param parameters: the parameters of the learner to optimize for via 5-fold cv
+        :param z_parameters: the parameters of the learner to optimize for via 5-fold cv in the z-space
         """
-        self.parameters=parameters
+        self.z_parameters=z_parameters
         self.doc_projector = CLESA(similarity=similarity, post=post).fit(lW)
 
     def fit(self, lX, ly, n_jobs=-1):
@@ -123,7 +132,7 @@ class CLESAPolylingualClassifier:
         zy = np.vstack([ly[lang] for lang in langs])
 
         print('fitting the Z-space of shape={}'.format(Z.shape))
-        self.model = MonolingualClassifier(self.parameters)
+        self.model = MonolingualClassifier(self.z_parameters)
         self.model.fit(Z, zy, n_jobs=n_jobs)
         self.time = time.time() - tinit
         return self
@@ -148,8 +157,8 @@ class DCIPolylingualClassifier:
     """
     An instantiation of DCI in polylingual documents using categories as pivots
     """
-    def __init__(self, parameters={'C': [1e2, 1e1, 1, 1e-1]}):
-        self.parameters=parameters
+    def __init__(self, z_parameters=None):
+        self.z_parameters=z_parameters
         self.doc_projector = DistributionalCorrespondenceIndexing(dcf='linear', post='normal')
 
     def fit(self, lX, ly, n_jobs=-1):
@@ -164,7 +173,7 @@ class DCIPolylingualClassifier:
         zy = np.vstack([ly[lang] for lang in langs])
 
         print('fitting the Z-space of shape={}'.format(Z.shape))
-        self.model = MonolingualClassifier(self.parameters)
+        self.model = MonolingualClassifier(self.z_parameters)
         self.model.fit(Z, zy, n_jobs=n_jobs)
         self.time = time.time() - tinit
         return self
@@ -186,13 +195,12 @@ class DCIPolylingualClassifier:
 
 
 class LRIPolylingualClassifier:
-
     """
     Performs Random Indexing (Bag-of-Concepts) in the yuxtaposed representation, see: Moreo Fernández, A., Esuli, A.,
     & Sebastiani, F. (2016). Lightweight Random Indexing for Polylingual Text Classification. Journal of Artificial
     Intelligence Research, 57, 151-185.
     """
-    def __init__(self, parameters={'C': [1e2, 1e1, 1, 1e-1]}, reduction=0.):
+    def __init__(self, parameters=None, reduction=0.):
         """
         :param parameters: the parameters of the learner to optimize for via 5-fold cv
         :param reduction: the ratio of reduction of the dimensionality
@@ -245,7 +253,7 @@ class LRIPolylingualClassifier:
 
 class YuxtaposedPolylingualClassifier:
 
-    def __init__(self, parameters={'C': [1e2, 1e1, 1, 1e-1]}):
+    def __init__(self, parameters=None):
         self.model = MonolingualClassifier(parameters)
 
     def fit(self, lX, ly, n_jobs=-1):
@@ -281,9 +289,10 @@ class YuxtaposedPolylingualClassifier:
 
 
 class MonolingualClassifier:
-    def __init__(self, parameters={'C': [1e2, 1e1, 1, 1e-1]}):
-        self.learner = LinearSVC()
-        self.parameters = {'estimator__' + key: parameters[key] for key in parameters.keys()} if parameters else None
+
+    def __init__(self, parameters=None):
+        self.learner = SVC(kernel='linear')
+        self.parameters = parameters
         self.model = None
 
     def fit(self, X, y, n_jobs=-1):
@@ -293,16 +302,23 @@ class MonolingualClassifier:
 
         # multiclass?
         if len(y.shape) == 2:
+            if self.parameters is not None:
+                self.parameters = [{'estimator__' + key: params[key] for key in params.keys()}
+                                   for params in self.parameters]
             self.model = OneVsRestClassifier(self.learner, n_jobs=n_jobs)
         else:
+            #not debugged
             self.model = self.learner
 
         # parameter optimization?
         if self.parameters:
             print('debug: optimizing parameters...')
-            self.model = GridSearchCV(self.model, param_grid=self.parameters, refit=True, cv=5, n_jobs=n_jobs, scoring=make_scorer(macroF1), error_score=0)
+            self.model = GridSearchCV(self.model, param_grid=self.parameters, refit=True, cv=5, n_jobs=n_jobs,
+                                      scoring=make_scorer(macroF1), error_score=0)
 
         self.model.fit(X,y)
+        if isinstance(self.model, GridSearchCV):
+            print('best parameters: ', self.model.best_params_)
         self.time=time.time()-tinit
         return self
 

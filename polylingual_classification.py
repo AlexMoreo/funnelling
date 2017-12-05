@@ -20,10 +20,11 @@ parser.add_option("-c", "--optimc", dest="optimc", action='store_true',
 # TODO: the embedded space is dense and low-dimensional, maybe other kernels would be preferable
 # TODO: rcv1-v2
 # TODO: use lighter auxiliar classifiers (naive Bayes?)
-# TODO: baselines: CL-ESA, others?
-# TODO: possible improvement: cross-validation in C inside the auxiliar projectors in ClassEmbeddingPolylingualClassifier (the problem is that it is already very slow)
-# TODO: DCI embedding, but instead of dcf(f,pi) with dcf(f,ci), i.e., pivots are the categories! then, the doc embedding is the weighted sum of feat embeddings
-# TODO: upper bound: same documents but only in English, and MonolingualClassifier
+# TODO: more baselines
+# TODO: receive the wiki matrix as an additional parameter
+# TODO: try with other dcf (PMI might be better)
+# note: looks like a linearsvm classifier on top of a linearsvm is merely countering back the effect of C w/o optimization
+#       try with gaussian kernel, think of a neural net doing the same thing as a way to do away (or diminish) the effect of meta-parameters
 if __name__=='__main__':
     (op, args) = parser.parse_args()
 
@@ -33,7 +34,7 @@ if __name__=='__main__':
     results = PolylingualClassificationResults(op.output)
 
     dataset_name = os.path.basename(op.dataset)
-    result_id = dataset_name+'_'+op.mode
+    result_id = dataset_name+'_'+op.mode+('_optimC' if op.optimc else '')
     if results.already_calculated(result_id):
         print('Experiment <'+result_id+'> already computed. Exit.')
         sys.exit()
@@ -41,10 +42,18 @@ if __name__=='__main__':
     data = MultilingualDataset.load(op.dataset)
     data.show_dimensions()
 
-    params = {'C': [1e2, 1e1, 1, 1e-1]} if op.optimc else None
+    params, z_params = None, None
+    if op.optimc:
+        c_range = [1e4, 1e3, 1e2, 1e1, 1, 1e-1]
+        params = [{'C': c_range}]
+        z_params = [{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4], 'C': c_range},
+                    {'kernel': ['linear'], 'C': c_range}]
+
     if op.mode == 'class':
+        [{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4], 'C': [1e4, 1e3, 1e2, 1e1, 1, 1e-1]},
+         {'kernel': ['linear'], 'C': [1e4, 1e3, 1e2, 1e1, 1, 1e-1]}]
         print('Learning Class-Embedding Poly-lingual Classifier')
-        classifier = ClassEmbeddingPolylingualClassifier(params)
+        classifier = ClassEmbeddingPolylingualClassifier(None, z_params) #optimize only for z_params
     elif op.mode == 'naive':
         print('Learning Naive Poly-lingual Classifier')
         classifier = NaivePolylingualClassifier(params)
@@ -59,11 +68,11 @@ if __name__=='__main__':
         classifier = LRIPolylingualClassifier(params, reduction=0.5)
     elif op.mode == 'dci':
         print('Learning Distributional Correspondence Indexing Poly-lingual Classifier')
-        classifier = DCIPolylingualClassifier(params)
+        classifier = DCIPolylingualClassifier(z_params)
     elif op.mode == 'clesa':
         lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
         print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
-        classifier = CLESAPolylingualClassifier(lW, params)
+        classifier = CLESAPolylingualClassifier(lW, z_params)
     elif op.mode == 'upper':
         assert data.langs()==['en'], 'only English is expected in the upper bound call'
         print('Learning Upper bound as the English-only Classifier')
@@ -75,7 +84,7 @@ if __name__=='__main__':
     for lang in data.langs():
         macrof1, microf1, macrok, microk = l_eval[lang]
         print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (lang, macrof1, microf1))
-        results.add_row(result_id, op.mode, dataset_name, classifier.time, lang, macrof1, microf1, macrok, microk, notes=op.note)
+        results.add_row(result_id, op.mode, op.optimc, dataset_name, classifier.time, lang, macrof1, microf1, macrok, microk, notes=op.note)
 
 
 
