@@ -14,7 +14,7 @@ class NLTKLemmaTokenizer(object):
 
     def __call__(self, doc):
         self.called += 1
-        if self.verbose and self.called%10==0:
+        if self.verbose:
             print("\r\t\t[documents processed %d]" % (self.called), end="")
         tokens = word_tokenize(doc)
         stems = []

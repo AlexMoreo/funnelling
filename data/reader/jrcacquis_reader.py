@@ -87,7 +87,7 @@ def _force_parallel(doclist, langs):
     parallel_doc_ids = set([id for id,count in par_id_count.items() if count==n_langs])
     return [doc for doc in doclist if doc.parallel_id in parallel_doc_ids]
 
-def _random_sampling_avoiding_parallel(doclist):
+def random_sampling_avoiding_parallel(doclist):
     random_order = list(range(len(doclist)))
     shuffle(random_order)
     sampled_request = []
@@ -124,9 +124,24 @@ def _filter_by_frequency(doclist, cat_threshold):
     freq_categories.sort()
     return _filter_by_category(doclist, freq_categories), freq_categories
 
+#select top most_frequent categories (and filters documents containing those categories)
+def _most_common(doclist, most_frequent):
+    cat_count = Counter()
+    for d in doclist:
+        cat_count.update(d.categories)
+
+    freq_categories = [cat for cat,count in cat_count.most_common(most_frequent)]
+    freq_categories.sort()
+    return _filter_by_category(doclist, freq_categories), freq_categories
+
+def _get_categories(request):
+    final_cats = set()
+    for d in request:
+        final_cats.update(d.categories)
+    return list(final_cats)
 
 def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=True, cat_filter=None, cat_threshold=0,
-                    parallel=None, DOWNLOAD_URL_BASE ='http://optima.jrc.it/Acquis/JRC-Acquis.3.0/corpus/'):
+                    parallel=None, most_frequent=-1, DOWNLOAD_URL_BASE ='http://optima.jrc.it/Acquis/JRC-Acquis.3.0/corpus/'):
     assert parallel in [None, 'force', 'avoid'], 'parallel mode not supported'
     if not langs:
         langs = JRC_LANGS
@@ -195,20 +210,26 @@ def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=
     if parallel=='force':
         request = _force_parallel(request, langs)
     elif parallel == 'avoid':
-        request = _random_sampling_avoiding_parallel(request)
+        request = random_sampling_avoiding_parallel(request)
+
+    final_cats = _get_categories(request)
 
     if cat_filter:
         request = _filter_by_category(request, cat_filter)
-        final_cats = list(cat_filter)
-        if cat_threshold > 0:
-            request, final_cats = _filter_by_frequency(request, cat_threshold)
-    else:
-        final_cats = set()
-        for d in request:
-            final_cats.update(d.categories)
-        final_cats = list(final_cats)
+        final_cats = _get_categories(request)
+    if cat_threshold > 0:
+        request, final_cats = _filter_by_frequency(request, cat_threshold)
+    if most_frequent != -1 and len(final_cats) > most_frequent:
+        request, final_cats = _most_common(request, most_frequent)
 
     return request, final_cats
+
+def print_cat_analysis(request):
+    cat_count = Counter()
+    for d in request:
+        cat_count.update(d.categories)
+    print("Number of active categories: {}".format(len(cat_count)))
+    print(cat_count.most_common())
 
 # inspects the Eurovoc thesaurus in order to select a subset of categories
 # currently, only 'broadest' policy (i.e., take all categories with no parent category), and 'all' is implemented

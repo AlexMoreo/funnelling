@@ -104,13 +104,13 @@ class CLESAPolylingualClassifier:
     """
     A polylingual classifier based on the cross-lingual ESA method
     """
-    def __init__(self, lW, parameters={'C': [1e2, 1e1, 1, 1e-1]}):
+    def __init__(self, lW, parameters={'C': [1e2, 1e1, 1, 1e-1]}, similarity='dot', post=False):
         """
         :param lW: a dictionary {lang : wikipedia doc-by-term matrix}
         :param parameters: the parameters of the learner to optimize for via 5-fold cv
         """
         self.parameters=parameters
-        self.doc_projector = CLESA(similarity='dot', post=False).fit(lW)
+        self.doc_projector = CLESA(similarity=similarity, post=post).fit(lW)
 
     def fit(self, lX, ly, n_jobs=-1):
         tinit = time.time()

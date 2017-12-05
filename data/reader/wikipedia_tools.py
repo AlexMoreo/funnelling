@@ -4,15 +4,15 @@ import os, sys
 sys.path.append("/home/moreo/CLESA/cl-esa-p")
 from os.path import join
 from bz2 import BZ2File
-from StringIO import StringIO
 from ijson.common import parse
 from ijson.common import ObjectBuilder
 from ijson.common import items
-import cPickle as pickle
+import pickle
 from util.file import list_dirs, list_files, makedirs_if_not_exist
 from itertools import islice
 import re
 from xml.sax.saxutils import escape
+import numpy as np
 
 policies = ["IN_ALL_LANGS", "IN_ANY_LANG"]
 
@@ -25,11 +25,11 @@ and have processed each document to clean their texts with one of the tools:
 It is also assumed you have dowloaded the all-entities json file (e.g., https://dumps.wikimedia.org/wikidatawiki/entities/latest-all.json.bz2)
 
 This tools help you in:
-    - Process the huge json file as a stream, and create a multilingual map of corresponding titles for each language.
+    - Processes the huge json file as a stream, and create a multilingual map of corresponding titles for each language.
     Set the policy = "IN_ALL_LANGS" will extract only titles which appear in all (AND) languages, whereas "IN_ANY_LANG"
-    extract all titles appearing in at least one (OR) language (warning: this will creates a huge dictionary).
-    Note: This version is quite slow. Although it is run once for all, you might be interested in taking a look at "Wikidata in BigQuery".
-    - Process the huge json file as a stream a create a simplified file which occupies much less and is far faster to be processed.
+    extracts all titles appearing in at least one (OR) language (warning: this will creates a huge dictionary).
+    Note: This version is quite slow. Although it is run once for all, you might be prefer to take a look at "Wikidata in BigQuery".
+    - Processes the huge json file as a stream a creates a simplified file which occupies much less and is far faster to be processed.
     - Use the multilingual map to extract, from the clean text versions, individual xml documents containing all
     language-specific versions from the document.
     - Fetch the multilingual documents to create, for each of the specified languages, a list containing all documents,
@@ -344,6 +344,17 @@ def fetch_wikipedia_multilingual(wiki_multi_path, langs, min_words=100, deletion
         pickle.dump(mling_documents, open(pickle_name, 'wb'), pickle.HIGHEST_PROTOCOL)
 
     return mling_documents
+
+def random_wiki_sample(l_wiki, max_documents):
+    langs = list(l_wiki.keys())
+    assert len(np.unique([len(l_wiki[l]) for l in langs])) == 1, 'documents across languages do not seem to be aligned'
+    ndocs_per_lang = len(l_wiki[langs[0]])
+    if ndocs_per_lang > max_documents:
+        sel = set(np.random.choice(list(range(ndocs_per_lang)), max_documents, replace=False))
+        for lang in langs:
+            l_wiki[lang] = [d for i, d in enumerate(l_wiki[lang]) if i in sel]
+    return l_wiki
+
 
 if __name__ == "__main__":
 

@@ -28,7 +28,7 @@ if __name__=='__main__':
     (op, args) = parser.parse_args()
 
     assert exists(op.dataset), 'Unable to find file '+str(op.dataset)
-    assert op.mode in ['class', 'naive', 'yuxta', 'lri', 'lri-half', 'dci'], 'Error: unknown mode'
+    assert op.mode in ['class', 'naive', 'yuxta', 'lri', 'lri-half', 'dci', 'clesa', 'upper'], 'Error: unknown mode'
 
     results = PolylingualClassificationResults(op.output)
 
@@ -60,6 +60,14 @@ if __name__=='__main__':
     elif op.mode == 'dci':
         print('Learning Distributional Correspondence Indexing Poly-lingual Classifier')
         classifier = DCIPolylingualClassifier(params)
+    elif op.mode == 'clesa':
+        lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
+        print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
+        classifier = CLESAPolylingualClassifier(lW, params)
+    elif op.mode == 'upper':
+        assert data.langs()==['en'], 'only English is expected in the upper bound call'
+        print('Learning Upper bound as the English-only Classifier')
+        classifier = NaivePolylingualClassifier(params) #this is just to match the multilingual dataset format (despite there are only English documents)
 
     classifier.fit(data.lXtr(), data.lYtr())
     l_eval = classifier.evaluate(data.lXte(), data.lYte())
