@@ -29,7 +29,7 @@ if __name__=='__main__':
     (op, args) = parser.parse_args()
 
     assert exists(op.dataset), 'Unable to find file '+str(op.dataset)
-    assert op.mode in ['class', 'naive', 'yuxta', 'lri', 'lri-half', 'dci', 'clesa', 'upper'], 'Error: unknown mode'
+    assert op.mode in ['class', 'naive', 'yuxta', 'lri', 'lri-half', 'dci', 'clesa', 'upper', 'monoclass', 'yuxtaclass'], 'Error: unknown mode'
 
     results = PolylingualClassificationResults(op.output)
 
@@ -60,6 +60,9 @@ if __name__=='__main__':
     elif op.mode == 'yuxta':
         print('Learning Yuxtaposed Poly-lingual Classifier')
         classifier = YuxtaposedPolylingualClassifier(params)
+    elif op.mode == 'yuxtaclass':
+        print('Learning Yuxtaposed-Class-Embeddings Poly-lingual Classifier')
+        classifier = ClassYuxtaEmbeddingPolylingualClassifier(params, params)
     elif op.mode == 'lri':
         print('Learning Lightweight Random Indexing Poly-lingual Classifier')
         classifier = LRIPolylingualClassifier(params)
@@ -77,6 +80,10 @@ if __name__=='__main__':
         assert data.langs()==['en'], 'only English is expected in the upper bound call'
         print('Learning Upper bound as the English-only Classifier')
         classifier = NaivePolylingualClassifier(params) #this is just to match the multilingual dataset format (despite there are only English documents)
+    elif op.mode == 'monoclass':
+        assert data.langs()==['en'], 'only English is expected in the upper bound call'
+        print('Learning Monolingual Class-Embedding in the English-only corpus')
+        classifier = ClassEmbeddingPolylingualClassifier(None, z_params)
 
     classifier.fit(data.lXtr(), data.lYtr())
     l_eval = classifier.evaluate(data.lXte(), data.lYte())

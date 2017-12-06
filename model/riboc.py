@@ -33,9 +33,10 @@ def _create_random_index_dictionary(shape, k, normalized=False, format='csr', po
     val = 1.0 if not normalized else 1.0/math.sqrt(k)
     ri_dict = csr_matrix((nF, latent_dimensions))  if format == 'csr' else np.zeros((nF, latent_dimensions))
 
-    for t in range(1,nF):
+    #TODO: optimize
+    for t in range(nF):
         dims = np.zeros(k, dtype=np.int32)
-        dims[0] = (t-1) % latent_dimensions #the first dimension is choosen in a round-robin manner (prevents gaps)
+        dims[0] = t % latent_dimensions #the first dimension is choosen in a round-robin manner (prevents gaps)
         dims[1:] = np.random.choice(latent_dimensions, size=k-1, replace=False)
         values = (np.random.randint(0,2, size=k)*2.0-1.0) * val if not positive else np.array([+val]*k)
         ri_dict[t,dims]=values
@@ -43,3 +44,5 @@ def _create_random_index_dictionary(shape, k, normalized=False, format='csr', po
     print('\nDone')
     return ri_dict
 
+if __name__=='__main__':
+    _create_random_index_dictionary((15000,2000), k=2, format='np')

@@ -1,10 +1,9 @@
 import numpy as np
 import scipy
 import time
-
 from model.clesa import CLESA
 from util.metrics import macroF1, microF1, macroK, microK
-from scipy.sparse import issparse
+from scipy.sparse import issparse, csr_matrix
 from sklearn.svm import LinearSVC, SVC
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.model_selection import GridSearchCV
@@ -14,7 +13,65 @@ from model.dci import DistributionalCorrespondenceIndexing
 
 #TODO: class hierarchy inheritin from PolylingualClassifier
 #TODO: abstract evaluate as a function receiving a Polylingual Classifier and an array of metrics
-#TODO: abstract the base learning and grid-search for any learner (currently: wired to LinearSVC)
+#TODO: Yuxta+ClassEmbedding, LRI+ClassEmbedding, DCI+ClassEmbedding
+#TODO: check if ClassEmbedding improves in monolingual (the upper bound)
+
+class ClassYuxtaEmbeddingPolylingualClassifier:
+    """
+    This classifier combines the yuxtaposed space with the class embeddings before training the final classifier
+    """
+    def __init__(self, c_parameters=None, y_parameters=None):
+        """
+        :param c_parameters: parameters for the previous class-embedding projector
+        :param y_parameters: parameters for the final combined learner
+        """
+        self.c_parameters=c_parameters
+        self.y_parameters = y_parameters
+        self.class_projector = NaivePolylingualClassifier(self.c_parameters)
+        self.model = None
+
+    def fit(self, lX, ly, n_jobs=-1):
+        tinit = time.time()
+        print('fitting the projectors...')
+        self.class_projector.fit(lX,ly,n_jobs)
+
+        print('projecting the documents')
+        langs = list(lX.keys())
+        lZ = self.class_projector.decision_function(lX)
+
+        print('joining X and Z spaces')
+        Z = np.vstack([lZ[lang] for lang in langs])  # Z is the language independent space
+        Z = Z/np.linalg.norm(Z,axis=1, keepdims=True)
+        X = scipy.sparse.vstack([lX[lang] for lang in langs])
+        XZ = self._XZhstack(X, Z)
+        Y = np.vstack([ly[lang] for lang in langs])
+
+        print('fitting the XZ-space of shape={}'.format(XZ.shape))
+        self.model = MonolingualClassifier(self.y_parameters)
+        self.model.fit(XZ,Y)
+        self.time = time.time() - tinit
+        return self
+
+    def predict(self, lX):
+        """
+        :param lX: a dictionary {language_label: X csr-matrix}
+        :return: a dictionary of predictions
+        """
+        assert self.model is not None, 'predict called before fit'
+        lZ = self.class_projector.decision_function(lX)
+        return {lang:self.model.predict(self._XZhstack(lX[lang], lZ[lang])) for lang in lZ.keys()}
+
+    def evaluate(self, lX, ly):
+        print('evaluation')
+        assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in evaluate'
+        ly_ = self.predict(lX)
+        return {lang:_evaluate(ly[lang],ly_[lang]) for lang in lX.keys()}
+
+    def _XZhstack(self, X, Z):
+        assert isinstance(X, csr_matrix), 'expected csr_matrix in X-space'
+        assert isinstance(Z, np.ndarray), 'expected np.ndarray in Z-space'
+        return csr_matrix(scipy.sparse.hstack([X, csr_matrix(Z)]))
+
 
 class ClassEmbeddingPolylingualClassifier:
     """
@@ -297,8 +354,7 @@ class MonolingualClassifier:
 
     def fit(self, X, y, n_jobs=-1):
         tinit = time.time()
-        if issparse(X) and not X.has_sorted_indices:
-            X.sort_indices()
+        _sort_if_sparse(X)
 
         # multiclass?
         if len(y.shape) == 2:
@@ -312,7 +368,7 @@ class MonolingualClassifier:
 
         # parameter optimization?
         if self.parameters:
-            print('debug: optimizing parameters...')
+            print('debug: optimizing parameters:', self.parameters)
             self.model = GridSearchCV(self.model, param_grid=self.parameters, refit=True, cv=5, n_jobs=n_jobs,
                                       scoring=make_scorer(macroF1), error_score=0)
 
@@ -324,18 +380,21 @@ class MonolingualClassifier:
 
     def decision_function(self, X):
         assert self.model is not None, 'predict called before fit'
-        if issparse(X) and not X.has_sorted_indices:
-            X.sort_indices()
+        _sort_if_sparse(X)
         return self.model.decision_function(X)
 
     def predict(self, X):
         assert self.model is not None, 'predict called before fit'
-        if issparse(X) and not X.has_sorted_indices:
-            X.sort_indices()
+        _sort_if_sparse(X)
         return self.model.predict(X)
 
     def evaluate(self, X, y):
         y_ = self.predict(X)
-        return macroF1(y, y_), microF1(y, y_), macroK(y, y_), microK(y, y_)
+        return _evaluate(y,y_)
 
+def _evaluate(y,y_):
+    return macroF1(y, y_), microF1(y, y_), macroK(y, y_), microK(y, y_)
 
+def _sort_if_sparse(X):
+    if issparse(X) and not X.has_sorted_indices:
+        X.sort_indices()
