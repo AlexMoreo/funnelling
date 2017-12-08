@@ -2,11 +2,11 @@ from os.path import join, exists
 from nltk.corpus import stopwords
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import MultiLabelBinarizer
-from reader.jrcacquis_reader import *
-from languages import lang_set, NLTK_LANGMAP, RCV2_LANGS_WITH_NLTK_STEMMING
-from reader.rcv_reader import fetch_RCV1, fetch_RCV2
-from reader.wikipedia_tools import fetch_wikipedia_multilingual, random_wiki_sample
-from text_preprocessor import NLTKLemmaTokenizer
+from data.reader.jrcacquis_reader import *
+from data.languages import lang_set, NLTK_LANGMAP, RCV2_LANGS_WITH_NLTK_STEMMING
+from data.reader.rcv_reader import fetch_RCV1, fetch_RCV2
+from data.reader.wikipedia_tools import fetch_wikipedia_multilingual, random_wiki_sample
+from data.text_preprocessor import NLTKLemmaTokenizer
 import pickle
 from learner.learners import *
 from random import shuffle
