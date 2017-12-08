@@ -31,7 +31,8 @@ def _create_random_index_dictionary(shape, k, normalized=False, format='csr', po
     nF, latent_dimensions = shape
     print("Creating the random index dictionary for |V|={} with {} dimensions".format(nF,latent_dimensions))
     val = 1.0 if not normalized else 1.0/math.sqrt(k)
-    ri_dict = csr_matrix((nF, latent_dimensions))  if format == 'csr' else np.zeros((nF, latent_dimensions))
+    #ri_dict = csr_matrix((nF, latent_dimensions))  if format == 'csr' else np.zeros((nF, latent_dimensions))
+    ri_dict = np.zeros((nF, latent_dimensions))
 
     #TODO: optimize
     for t in range(nF):
@@ -42,6 +43,9 @@ def _create_random_index_dictionary(shape, k, normalized=False, format='csr', po
         ri_dict[t,dims]=values
         print("\rprogress [%.2f%% complete]" % (t * 100.0 / nF), end='')
     print('\nDone')
+
+    if format=='csr':
+        ri_dict = csr_matrix(ri_dict)
     return ri_dict
 
 if __name__=='__main__':

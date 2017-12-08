@@ -1,6 +1,7 @@
 import numpy as np
 import scipy
 import time
+from sklearn.feature_extraction.text import TfidfTransformer
 from model.clesa import CLESA
 from util.metrics import macroF1, microF1, macroK, microK
 from scipy.sparse import issparse, csr_matrix
@@ -13,12 +14,19 @@ from model.dci import DistributionalCorrespondenceIndexing
 
 #TODO: class hierarchy inheritin from PolylingualClassifier
 #TODO: abstract evaluate as a function receiving a Polylingual Classifier and an array of metrics
-#TODO: Yuxta+ClassEmbedding, LRI+ClassEmbedding, DCI+ClassEmbedding
+#TODO: Juxta+ClassEmbedding, LRI+ClassEmbedding, DCI+ClassEmbedding
 #TODO: check if ClassEmbedding improves in monolingual (the upper bound)
+#TODO: LRI: reweight!
+#TODO: PLTC take an unprocessed version of the dataset (no stem), and do "frustatingly easy dom-adaptation" with LRI
+#TODO: read about svm-nets (extreme learner machines has some pointers)
+#TODO: class-embedding with fold-validation, embed only on unseen documents (the left-out fold)
+#TODO: think about the neural-net extension
+#TODO: fix the evaluation in LRI and juxtaposed -- takes too long
 
-class ClassYuxtaEmbeddingPolylingualClassifier:
+
+class ClassJuxtaEmbeddingPolylingualClassifier:
     """
-    This classifier combines the yuxtaposed space with the class embeddings before training the final classifier
+    This classifier combines the juxtaposed space with the class embeddings before training the final classifier
     """
     def __init__(self, c_parameters=None, y_parameters=None):
         """
@@ -253,7 +261,7 @@ class DCIPolylingualClassifier:
 
 class LRIPolylingualClassifier:
     """
-    Performs Random Indexing (Bag-of-Concepts) in the yuxtaposed representation, see: Moreo Fernández, A., Esuli, A.,
+    Performs Random Indexing (Bag-of-Concepts) in the juxtaposed representation, see: Moreo Fernández, A., Esuli, A.,
     & Sebastiani, F. (2016). Lightweight Random Indexing for Polylingual Text Classification. Journal of Artificial
     Intelligence Research, 57, 151-185.
     """
@@ -261,6 +269,7 @@ class LRIPolylingualClassifier:
         """
         :param parameters: the parameters of the learner to optimize for via 5-fold cv
         :param reduction: the ratio of reduction of the dimensionality
+        :param reweight: indicates whether to reweight the ri-matrix using tfidf
         """
         assert 0 <= reduction < 1, 'reduction ratio should be in range [0,1)'
         self.model = MonolingualClassifier(parameters)
@@ -268,15 +277,15 @@ class LRIPolylingualClassifier:
 
     def fit(self, lX, ly, n_jobs=-1):
         """
-        trains one classifiers in the yuxtaposed random indexed feature space
-        :param lX: a dictionary {language_label: X csr-matrix}; the feature space is assumed to be yuxtaposed
+        trains one classifiers in the juxtaposed random indexed feature space
+        :param lX: a dictionary {language_label: X csr-matrix}; the feature space is assumed to be juxtaposed
         :param ly: a dictionary {language_label: y np.array}
         :return: self
         """
         tinit = time.time()
         assert set(lX.keys()) == set(ly.keys()), 'inconsistent language mappings in fit'
         assert len(np.unique([X.shape[1] for X in lX.values()]))==1, \
-            'feature-spaces in the yuxtaposed representation should be equal'
+            'feature-spaces in the juxtaposed representation should be equal'
         langs = list(lX.keys())
         Xtr = scipy.sparse.vstack([lX[lang] for lang in langs])
         Ytr = np.vstack([ly[lang] for lang in langs])
@@ -292,7 +301,7 @@ class LRIPolylingualClassifier:
 
     def predict(self, lX):
         """
-        :param lX: a dictionary {language_label: X csr-matrix}; the feature space is assumed to be yuxtaposed
+        :param lX: a dictionary {language_label: X csr-matrix}; the feature space is assumed to be juxtaposed
         :return: a dictionary of predictions
         """
         assert self.model is not None, 'predict called before fit'
@@ -308,22 +317,22 @@ class LRIPolylingualClassifier:
         return {lang:model.evaluate(boc.transform(lX[lang]),ly[lang]) for lang in lX.keys()}
 
 
-class YuxtaposedPolylingualClassifier:
+class JuxtaposedPolylingualClassifier:
 
     def __init__(self, parameters=None):
         self.model = MonolingualClassifier(parameters)
 
     def fit(self, lX, ly, n_jobs=-1):
         """
-        trains one classifiers in the yuxtaposed feature space
-        :param lX: a dictionary {language_label: X csr-matrix}; the feature space is assumed to be yuxtaposed
+        trains one classifiers in the juxtaposed feature space
+        :param lX: a dictionary {language_label: X csr-matrix}; the feature space is assumed to be juxtaposed
         :param ly: a dictionary {language_label: y np.array}
         :return: self
         """
         tinit = time.time()
         assert set(lX.keys()) == set(ly.keys()), 'inconsistent language mappings in fit'
         assert len(np.unique([X.shape[1] for X in lX.values()]))==1, \
-            'feature-spaces in the yuxtaposed representation should be equal'
+            'feature-spaces in the juxtaposed representation should be equal'
         langs = list(lX.keys())
         Xtr = scipy.sparse.vstack([lX[lang] for lang in langs])
         Ytr = np.vstack([ly[lang] for lang in langs])
@@ -333,7 +342,7 @@ class YuxtaposedPolylingualClassifier:
 
     def predict(self, lX):
         """
-        :param lX: a dictionary {language_label: X csr-matrix}; the feature space is assumed to be yuxtaposed
+        :param lX: a dictionary {language_label: X csr-matrix}; the feature space is assumed to be juxtaposed
         :return: a dictionary of predictions
         """
         assert self.model is not None, 'predict called before fit'
