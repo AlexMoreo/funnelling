@@ -29,7 +29,7 @@ if __name__=='__main__':
     (op, args) = parser.parse_args()
 
     assert exists(op.dataset), 'Unable to find file '+str(op.dataset)
-    assert op.mode in ['class', 'naive', 'juxta', 'lri', 'lri-half', 'dci', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'Error: unknown mode'
+    assert op.mode in ['class', 'class10', 'naive', 'juxta', 'lri', 'lri-half', 'dci', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'Error: unknown mode'
 
     results = PolylingualClassificationResults(op.output)
 
@@ -49,10 +49,11 @@ if __name__=='__main__':
         z_params = [{'kernel':['linear'], 'C': c_range}, {'kernel': ['rbf'], 'gamma': [1e-3, 1e-4], 'C': c_range}]
 
     if op.mode == 'class':
-        [{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4], 'C': [1e4, 1e3, 1e2, 1e1, 1, 1e-1]},
-         {'kernel': ['linear'], 'C': [1e4, 1e3, 1e2, 1e1, 1, 1e-1]}]
         print('Learning Class-Embedding Poly-lingual Classifier')
         classifier = ClassEmbeddingPolylingualClassifier(None, z_params) #optimize only for z_params
+    elif op.mode == 'class10':
+        print('Learning 10-folded Class-Embedding Poly-lingual Classifier')
+        classifier = ClassEmbeddingPolylingualClassifier(None, z_params, folded_projections=10) #optimize only for z_params
     elif op.mode == 'naive':
         print('Learning Naive Poly-lingual Classifier')
         classifier = NaivePolylingualClassifier(params)

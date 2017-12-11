@@ -11,6 +11,7 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import make_scorer
 from model.riboc import RandomIndexingBoC
 from model.dci import DistributionalCorrespondenceIndexing
+from sklearn.model_selection import KFold
 
 #TODO: class hierarchy inheritin from PolylingualClassifier
 #TODO: abstract evaluate as a function receiving a Polylingual Classifier and an array of metrics
@@ -87,25 +88,74 @@ class ClassEmbeddingPolylingualClassifier:
     decision score phi_l(d,ci) of an auxiliar classifier phi_l trained on category ci for documents in language l;
     then trains one single classifier for all documents in this space, irrespective of their originary language
     """
-    def __init__(self, parameters=None, z_parameters=None):
+    def __init__(self, parameters=None, z_parameters=None, folded_projections=1):
         """
         :param parameters: parameters for the learner in the doc_projector
         :param z_parameters: parameters for the learner in the z-space
+        :param folded_predictions: if 1 then the model trains the auxiliar classifiers with all training data and
+        projects the data before training the final classifier; if greater than one, the training set is split in as
+        many folds as indicated, and the projected space is composed by concatenating each fold prediction based on
+        models trained on the remaining folds. This should increase the generality of the space to unseen data.
         """
+        assert folded_projections>0, "positive number of folds expected"
         self.parameters=parameters
         self.z_parameters = z_parameters
         self.doc_projector = NaivePolylingualClassifier(self.parameters)
+        self.folded_projections = folded_projections
+
+    def _get_zspace(self, lXtr, lYtr, lXproj=None, lYproj=None, n_jobs=-1):
+        """
+        :param lXtr: {lang:matrix} to train
+        :param lYtr: {lang:labels} to train
+        :param lXproj: {lang:matrix} to project (if None, then projects the lXtr)
+        :param lYproj: {lang:labels} to stack in the same order (if None, then lYtr will be stacked)
+        :param n_jobs: number of jobs
+        :return: the projection of lXproj documents into the Z-space defined by the confidence scores of language-specific
+        models trained on lXtr, and the lYproj labels stacked consistently
+        """
+        if lXproj is None and lYproj is None:
+            lXproj, lYproj = lXtr, lYtr
+
+        print('fitting the projectors...')
+        self.doc_projector.fit(lXtr, lYtr, n_jobs)
+
+        print('projecting the documents')
+        langs = list(lXtr.keys())
+        lZ = self.doc_projector.decision_function(lXproj)
+        Z = np.vstack([lZ[lang] for lang in langs])  # Z is the language independent space
+        zy = np.vstack([lYproj[lang] for lang in langs])
+
+        return Z, zy
 
     def fit(self, lX, ly, n_jobs=-1):
         tinit = time.time()
-        print('fitting the projectors...')
-        self.doc_projector.fit(lX,ly,n_jobs)
 
-        print('projecting the documents')
-        langs = list(lX.keys())
-        lZ = self.doc_projector.decision_function(lX)
-        Z = np.vstack([lZ[lang] for lang in langs]) # Z is the language independent space
-        zy = np.vstack([ly[lang] for lang in langs])
+        if self.folded_projections == 1:
+            Z, zy = self._get_zspace(lX, ly, n_jobs=n_jobs)
+        else:
+            print('stratified split of {} folds'.format(self.folded_projections))
+            skf = KFold(n_splits=self.folded_projections, shuffle=True)
+
+            Z, zy = [], []
+            lfold = {lang:list(skf.split(lX[lang],ly[lang])) for lang in lX.keys()}
+            for fold in range(self.folded_projections):
+                print('fitting the projectors ({}/{})...'.format(fold+1,self.folded_projections))
+                lfoldXtr, lfoldYtr = {}, {}
+                lfoldXte, lfoldYte = {}, {}
+                for lang in lX.keys():
+                    train, test = lfold[lang][fold]
+                    lfoldXtr[lang] = lX[lang][train]
+                    lfoldYtr[lang] = ly[lang][train]
+                    lfoldXte[lang] = lX[lang][test]
+                    lfoldYte[lang] = ly[lang][test]
+                Zfold, zYfold = self._get_zspace(lfoldXtr, lfoldYtr, lfoldXte, lfoldYte, n_jobs)
+                Z.append(Zfold)
+                zy.append(zYfold)
+            # compose the Z-space as the union of all folded predictions
+            Z = np.vstack(Z)
+            zy = np.vstack(zy)
+            # refit the document projector with all examples to have a more reliable projector for test data
+            self.doc_projector.fit(lX, ly, n_jobs)
 
         print('fitting the Z-space of shape={}'.format(Z.shape))
         self.model = MonolingualClassifier(self.z_parameters)

@@ -1,4 +1,3 @@
-from __future__ import print_function
 from os import listdir, makedirs
 from os.path import isdir, isfile, join, exists, dirname
 from sklearn.externals.six.moves import urllib
