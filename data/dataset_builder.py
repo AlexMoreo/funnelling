@@ -32,7 +32,14 @@ class MultilingualDataset:
     def load(cls, file):
         data = MultilingualDataset()
         data.multiling_dataset = pickle.load(open(file, 'rb'))
+        data.sort_indexes()
         return data
+
+    def sort_indexes(self):
+        for (lang, ((Xtr,_,_),(Xte,_,_))) in self.langs():
+            Xtr.sort_indices()
+            Xte.sort_indices()
+
 
     def lXtr(self):
         return {lang:Xtr for (lang, ((Xtr,_,_),_)) in self.multiling_dataset.items()}
