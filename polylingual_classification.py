@@ -2,6 +2,8 @@ import util.disable_sklearn_warnings
 from data.dataset_builder import *
 from optparse import OptionParser
 from util.results import PolylingualClassificationResults
+from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import MultinomialNB
 
 
 parser = OptionParser()
@@ -17,19 +19,25 @@ parser.add_option("-c", "--optimc", dest="optimc", action='store_true',
                   help="Optimices the soft-marging C parameter by 5-fold cv", default=False)
 
 
-# TODO: the embedded space is dense and low-dimensional, maybe other kernels would be preferable
-# TODO: rcv1-v2
 # TODO: use lighter auxiliar classifiers (naive Bayes?)
 # TODO: more baselines
-# TODO: receive the wiki matrix as an additional parameter
 # TODO: try with other dcf (PMI might be better)
 # note: looks like a linearsvm classifier on top of a linearsvm is merely countering back the effect of C w/o optimization
 #       try with gaussian kernel, think of a neural net doing the same thing as a way to do away (or diminish) the effect of meta-parameters
+#TODO: class hierarchy inheritin from PolylingualClassifier
+#TODO: abstract evaluate as a function receiving a Polylingual Classifier and an array of metrics
+#TODO: Juxta+ClassEmbedding, LRI+ClassEmbedding, DCI+ClassEmbedding
+#TODO: PLTC take an unprocessed version of the dataset (no stem), and do "frustatingly easy dom-adaptation" with LRI
+#TODO: think about the neural-net extension
+#TODO: fix the evaluation in LRI and juxtaposed -- takes too long
+#TODO: parametrice the auxiliary learners in class-embeddings and calibrate!: try with logistic-regression which is well-calibrated
+#TODO: ... have also tried with relevance vector machines, but the python code in github seems to have some problems...
+
 if __name__=='__main__':
     (op, args) = parser.parse_args()
 
     assert exists(op.dataset), 'Unable to find file '+str(op.dataset)
-    assert op.mode in ['class', 'class10', 'naive', 'juxta', 'lri', 'lri-half', 'dci', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'Error: unknown mode'
+    assert op.mode in ['class', 'class-lr', 'class-nb', 'class10', 'naive', 'juxta', 'lri', 'lri-half', 'dci', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'Error: unknown mode'
 
     results = PolylingualClassificationResults(op.output)
 
@@ -50,48 +58,57 @@ if __name__=='__main__':
 
     if op.mode == 'class':
         print('Learning Class-Embedding Poly-lingual Classifier')
-        classifier = ClassEmbeddingPolylingualClassifier(None, z_params) #optimize only for z_params
+        classifier = ClassEmbeddingPolylingualClassifier(parameters=None, z_parameters=z_params) #optimize only for z_params
     elif op.mode == 'class10':
         print('Learning 10-folded Class-Embedding Poly-lingual Classifier')
-        classifier = ClassEmbeddingPolylingualClassifier(None, z_params, folded_projections=10) #optimize only for z_params
+        classifier = ClassEmbeddingPolylingualClassifier(parameters=None, z_parameters=z_params, folded_projections=10) #optimize only for z_params
+    elif op.mode == 'class-lr':
+        print('Learning Logistic-Regression-based Class-Embedding Poly-lingual Classifier')
+        classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=LogisticRegression(), parameters=None, z_parameters=z_params) #optimize only for z_params
+    elif op.mode == 'class-nb':
+        print('Learning Naive-Bayes-based Class-Embedding Poly-lingual Classifier')
+        classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=MultinomialNB(), parameters= [{'alpha': [1.0, .1, .05, .01, .001, 0.0]}], z_parameters=z_params) #optimize only for z_params
     elif op.mode == 'naive':
         print('Learning Naive Poly-lingual Classifier')
-        classifier = NaivePolylingualClassifier(params)
+        classifier = NaivePolylingualClassifier(parameters=params)
     elif op.mode == 'juxta':
         print('Learning Juxtaposed Poly-lingual Classifier')
-        classifier = JuxtaposedPolylingualClassifier(params)
+        classifier = JuxtaposedPolylingualClassifier(parameters=params)
     elif op.mode == 'juxtaclass':
         print('Learning Juxtaposed-Class-Embeddings Poly-lingual Classifier')
-        classifier = ClassJuxtaEmbeddingPolylingualClassifier(params, params)
+        classifier = ClassJuxtaEmbeddingPolylingualClassifier(c_parameters=params, y_parameters=params)
     elif op.mode == 'lri':
         print('Learning Lightweight Random Indexing Poly-lingual Classifier')
-        classifier = LRIPolylingualClassifier(params)
+        classifier = LRIPolylingualClassifier(parameters=params)
     elif op.mode == 'lri-half':
         print('Learning Lightweight Random Indexing Poly-lingual Classifier')
-        classifier = LRIPolylingualClassifier(params, reduction=0.5)
+        classifier = LRIPolylingualClassifier(parameters=params, reduction=0.5)
     elif op.mode == 'dci':
         print('Learning Distributional Correspondence Indexing Poly-lingual Classifier')
-        classifier = DCIPolylingualClassifier(z_params)
+        classifier = DCIPolylingualClassifier(z_parameters=z_params)
     elif op.mode == 'clesa':
         lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
         print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
-        classifier = CLESAPolylingualClassifier(lW, z_params)
+        classifier = CLESAPolylingualClassifier(lW=lW, z_parameters=z_params)
     elif op.mode == 'upper':
         assert data.langs()==['en'], 'only English is expected in the upper bound call'
         print('Learning Upper bound as the English-only Classifier')
-        classifier = NaivePolylingualClassifier(params) #this is just to match the multilingual dataset format (despite there are only English documents)
+        classifier = NaivePolylingualClassifier(parameters=params) #this is just to match the multilingual dataset format (despite there are only English documents)
     elif op.mode == 'monoclass':
         assert data.langs()==['en'], 'only English is expected in the monolingual class embedding call'
         print('Learning Monolingual Class-Embedding in the English-only corpus')
-        classifier = ClassEmbeddingPolylingualClassifier(None, z_params)
+        classifier = ClassEmbeddingPolylingualClassifier(parameters=None, z_parameters=z_params)
 
     classifier.fit(data.lXtr(), data.lYtr())
     l_eval = classifier.evaluate(data.lXte(), data.lYte())
 
     for lang in data.langs():
-        macrof1, microf1, macrok, microk = l_eval[lang]
+        #macrof1, microf1, macrok, microk = l_eval[lang]
+        macrof1, microf1 = l_eval[lang]
         print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (lang, macrof1, microf1))
-        results.add_row(result_id, op.mode, op.optimc, dataset_name, classifier.time, lang, macrof1, microf1, macrok, microk, notes=op.note)
+        #results.add_row(result_id, op.mode, op.optimc, dataset_name, classifier.time, lang, macrof1, microf1, macrok, microk, notes=op.note)
+        notes=op.note # + classifier.best_params
+        results.add_row(result_id, op.mode, op.optimc, dataset_name, classifier.time, lang, macrof1, microf1, notes=op.note)
 
 
 

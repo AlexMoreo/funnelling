@@ -12,24 +12,15 @@ from sklearn.metrics import make_scorer
 from model.riboc import RandomIndexingBoC
 from model.dci import DistributionalCorrespondenceIndexing
 from sklearn.model_selection import KFold
-
-#TODO: class hierarchy inheritin from PolylingualClassifier
-#TODO: abstract evaluate as a function receiving a Polylingual Classifier and an array of metrics
-#TODO: Juxta+ClassEmbedding, LRI+ClassEmbedding, DCI+ClassEmbedding
-#TODO: check if ClassEmbedding improves in monolingual (the upper bound)
-#TODO: LRI: reweight!
-#TODO: PLTC take an unprocessed version of the dataset (no stem), and do "frustatingly easy dom-adaptation" with LRI
-#TODO: read about svm-nets (extreme learner machines has some pointers)
-#TODO: class-embedding with fold-validation, embed only on unseen documents (the left-out fold)
-#TODO: think about the neural-net extension
-#TODO: fix the evaluation in LRI and juxtaposed -- takes too long
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.externals.joblib import Parallel, delayed
 
 
 class ClassJuxtaEmbeddingPolylingualClassifier:
     """
     This classifier combines the juxtaposed space with the class embeddings before training the final classifier
     """
-    def __init__(self, c_parameters=None, y_parameters=None):
+    def __init__(self, c_parameters=None, y_parameters=None, n_jobs=-1):
         """
         :param c_parameters: parameters for the previous class-embedding projector
         :param y_parameters: parameters for the final combined learner
@@ -38,6 +29,7 @@ class ClassJuxtaEmbeddingPolylingualClassifier:
         self.y_parameters = y_parameters
         self.class_projector = NaivePolylingualClassifier(self.c_parameters)
         self.model = None
+        self.n_jobs = n_jobs
 
     def fit(self, lX, ly, n_jobs=-1):
         tinit = time.time()
@@ -56,7 +48,7 @@ class ClassJuxtaEmbeddingPolylingualClassifier:
         Y = np.vstack([ly[lang] for lang in langs])
 
         print('fitting the XZ-space of shape={}'.format(XZ.shape))
-        self.model = MonolingualClassifier(self.y_parameters)
+        self.model = MonolingualClassifier(self.y_parameters, n_jobs=self.n_jobs)
         self.model.fit(XZ,Y)
         self.time = time.time() - tinit
         return self
@@ -88,7 +80,7 @@ class ClassEmbeddingPolylingualClassifier:
     decision score phi_l(d,ci) of an auxiliar classifier phi_l trained on category ci for documents in language l;
     then trains one single classifier for all documents in this space, irrespective of their originary language
     """
-    def __init__(self, parameters=None, z_parameters=None, folded_projections=1):
+    def __init__(self, auxiliar_learner=SVC(kernel='linear'), parameters=None, z_parameters=None, folded_projections=1, n_jobs=-1):
         """
         :param parameters: parameters for the learner in the doc_projector
         :param z_parameters: parameters for the learner in the z-space
@@ -98,12 +90,14 @@ class ClassEmbeddingPolylingualClassifier:
         models trained on the remaining folds. This should increase the generality of the space to unseen data.
         """
         assert folded_projections>0, "positive number of folds expected"
+        self.auxiliar_learner = auxiliar_learner
         self.parameters=parameters
         self.z_parameters = z_parameters
-        self.doc_projector = NaivePolylingualClassifier(self.parameters)
+        self.doc_projector = NaivePolylingualClassifier(self.auxiliar_learner, self.parameters, n_jobs=n_jobs)
         self.folded_projections = folded_projections
+        self.n_jobs = n_jobs
 
-    def _get_zspace(self, lXtr, lYtr, lXproj=None, lYproj=None, n_jobs=-1):
+    def _get_zspace(self, lXtr, lYtr, lXproj=None, lYproj=None):
         """
         :param lXtr: {lang:matrix} to train
         :param lYtr: {lang:labels} to train
@@ -117,7 +111,7 @@ class ClassEmbeddingPolylingualClassifier:
             lXproj, lYproj = lXtr, lYtr
 
         print('fitting the projectors...')
-        self.doc_projector.fit(lXtr, lYtr, n_jobs)
+        self.doc_projector.fit(lXtr, lYtr)
 
         print('projecting the documents')
         langs = list(lXtr.keys())
@@ -127,11 +121,11 @@ class ClassEmbeddingPolylingualClassifier:
 
         return Z, zy
 
-    def fit(self, lX, ly, n_jobs=-1):
+    def fit(self, lX, ly):
         tinit = time.time()
 
         if self.folded_projections == 1:
-            Z, zy = self._get_zspace(lX, ly, n_jobs=n_jobs)
+            Z, zy = self._get_zspace(lX, ly)
         else:
             print('stratified split of {} folds'.format(self.folded_projections))
             skf = KFold(n_splits=self.folded_projections, shuffle=True)
@@ -148,17 +142,17 @@ class ClassEmbeddingPolylingualClassifier:
                     lfoldYtr[lang] = ly[lang][train]
                     lfoldXte[lang] = lX[lang][test]
                     lfoldYte[lang] = ly[lang][test]
-                Zfold, zYfold = self._get_zspace(lfoldXtr, lfoldYtr, lfoldXte, lfoldYte, n_jobs)
+                Zfold, zYfold = self._get_zspace(lfoldXtr, lfoldYtr, lfoldXte, lfoldYte)
                 Z.append(Zfold)
                 zy.append(zYfold)
             # compose the Z-space as the union of all folded predictions
             Z = np.vstack(Z)
             zy = np.vstack(zy)
             # refit the document projector with all examples to have a more reliable projector for test data
-            self.doc_projector.fit(lX, ly, n_jobs)
+            self.doc_projector.fit(lX, ly)
 
         print('fitting the Z-space of shape={}'.format(Z.shape))
-        self.model = MonolingualClassifier(self.z_parameters)
+        self.model = MonolingualClassifier(parameters=self.z_parameters, n_jobs=self.n_jobs)
         self.model.fit(Z,zy)
         self.time = time.time() - tinit
         return self
@@ -170,24 +164,25 @@ class ClassEmbeddingPolylingualClassifier:
         """
         assert self.model is not None, 'predict called before fit'
         lZ = self.doc_projector.decision_function(lX)
-        return {lang:self.model.predict(lZ[lang]) for lang in lZ.keys()}
+        return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
 
     def evaluate(self, lX, ly):
-        print('evaluation')
         assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in evaluate'
         lZ = self.doc_projector.decision_function(lX)
-        return {lang:self.model.evaluate(lZ[lang],ly[lang]) for lang in lX.keys()}
+        return _joblib_eval_multiling(self.model.evaluate, lZ, ly, self.n_jobs)
 
 
 class NaivePolylingualClassifier:
     """
     Is a mere set of independet MonolingualClassifiers
     """
-    def __init__(self, parameters=None):
+    def __init__(self, base_learner=SVC(kernel='linear'), parameters=None, n_jobs=-1):
+        self.base_learner = base_learner
         self.parameters = parameters
         self.model = None
+        self.n_jobs = n_jobs
 
-    def fit(self, lX, ly, n_jobs=-1):
+    def fit(self, lX, ly):
         """
         trains the independent monolingual classifiers
         :param lX: a dictionary {language_label: X csr-matrix}
@@ -196,7 +191,12 @@ class NaivePolylingualClassifier:
         """
         tinit = time.time()
         assert set(lX.keys()) == set(ly.keys()), 'inconsistent language mappings in fit'
-        self.model = {lang:MonolingualClassifier(self.parameters).fit(lX[lang],ly[lang],n_jobs) for lang in lX.keys()}
+        if self.n_jobs==1:
+            self.model = {lang:MonolingualClassifier(self.base_learner, self.parameters).fit(lX[lang],ly[lang]) for lang in lX.keys()}
+        else:
+            langs = list(lX.keys())
+            models = Parallel(n_jobs=self.n_jobs)(delayed(MonolingualClassifier(self.base_learner, self.parameters).fit)(lX[lang],ly[lang]) for lang in langs)
+            self.model = {lang: models[i] for i, lang in enumerate(langs)}
         self.time = time.time() - tinit
         return self
 
@@ -207,7 +207,12 @@ class NaivePolylingualClassifier:
         """
         assert self.model is not None, 'predict called before fit'
         assert set(lX.keys()).issubset(set(self.model.keys())), 'unknown languages requested in decision function'
-        return {lang: self.model[lang].decision_function(lX[lang]) for lang in lX.keys()}
+        if self.n_jobs==1:
+            return {lang: self.model[lang].decision_function(lX[lang]) for lang in lX.keys()}
+        else:
+            langs=list(lX.keys())
+            scores = Parallel(n_jobs=self.n_jobs)(delayed(self.model[lang].decision_function)(lX[lang]) for lang in langs)
+            return {lang:scores[i] for i,lang in enumerate(langs)}
 
     def predict(self, lX):
         """
@@ -216,27 +221,38 @@ class NaivePolylingualClassifier:
         """
         assert self.model is not None, 'predict called before fit'
         assert set(lX.keys()).issubset(set(self.model.keys())), 'unknown languages requested in predict'
-        return {lang:self.model[lang].predict(lX[lang]) for lang in lX.keys()}
+        if self.n_jobs == 1:
+            return {lang:self.model[lang].predict(lX[lang]) for lang in lX.keys()}
+        else:
+            langs = list(lX.keys())
+            scores = Parallel(n_jobs=self.n_jobs)(delayed(self.model[lang].predict)(lX[lang]) for lang in langs)
+            return {lang: scores[i] for i, lang in enumerate(langs)}
 
     def evaluate(self, lX, ly):
         assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in evaluate'
         assert set(lX.keys()).issubset(set(self.model.keys())), 'unknown languages requested in evaluate'
-        return {lang:self.model[lang].evaluate(lX[lang],ly[lang]) for lang in lX.keys()}
+        print('evaluation-parallel')
+        if self.n_jobs==1:
+            return {lang:self.model[lang].evaluate(lX[lang],ly[lang]) for lang in lX.keys()}
+        langs = list(lX.keys())
+        evals = Parallel(n_jobs=self.n_jobs)(delayed(self.model[lang].evaluate)(lX[lang],ly[lang]) for lang in langs)
+        return {lang:evals[i] for i,lang in enumerate(langs)}
 
 
 class CLESAPolylingualClassifier:
     """
     A polylingual classifier based on the cross-lingual ESA method
     """
-    def __init__(self, lW, z_parameters=None, similarity='dot', post=False):
+    def __init__(self, lW, z_parameters=None, similarity='dot', post=False, n_jobs=-1):
         """
         :param lW: a dictionary {lang : wikipedia doc-by-term matrix}
         :param z_parameters: the parameters of the learner to optimize for via 5-fold cv in the z-space
         """
         self.z_parameters=z_parameters
         self.doc_projector = CLESA(similarity=similarity, post=post).fit(lW)
+        self.n_jobs = n_jobs
 
-    def fit(self, lX, ly, n_jobs=-1):
+    def fit(self, lX, ly):
         tinit = time.time()
         assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in fit'
 
@@ -247,8 +263,8 @@ class CLESAPolylingualClassifier:
         zy = np.vstack([ly[lang] for lang in langs])
 
         print('fitting the Z-space of shape={}'.format(Z.shape))
-        self.model = MonolingualClassifier(self.z_parameters)
-        self.model.fit(Z, zy, n_jobs=n_jobs)
+        self.model = MonolingualClassifier(self.z_parameters, n_jobs=self.n_jobs)
+        self.model.fit(Z, zy)
         self.time = time.time() - tinit
         return self
 
@@ -259,13 +275,13 @@ class CLESAPolylingualClassifier:
         """
         assert self.model is not None, 'predict called before fit'
         lZ = self.doc_projector.transform(lX)
-        return {lang:self.model.predict(lZ[lang]) for lang in lZ.keys()}
+        return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
 
     def evaluate(self, lX, ly):
         print('evaluation')
         assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in evaluate'
         lZ = self.doc_projector.transform(lX)
-        return {lang:self.model.evaluate(lZ[lang],ly[lang]) for lang in lX.keys()}
+        return _joblib_eval_multiling(self.model.evaluate, lZ, ly, n_jobs=self.n_jobs)
 
 
 class DCIPolylingualClassifier:
@@ -300,13 +316,13 @@ class DCIPolylingualClassifier:
         """
         assert self.model is not None, 'predict called before fit'
         lZ = self.doc_projector.transform(lX)
-        return {lang:self.model.predict(lZ[lang]) for lang in lZ.keys()}
+        return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
 
     def evaluate(self, lX, ly):
         print('evaluation')
         assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in evaluate'
         lZ = self.doc_projector.transform(lX)
-        return {lang:self.model.evaluate(lZ[lang],ly[lang]) for lang in lX.keys()}
+        return _joblib_eval_multiling(self.model.evaluate, lZ, ly, n_jobs=self.n_jobs)
 
 
 class LRIPolylingualClassifier:
@@ -315,17 +331,18 @@ class LRIPolylingualClassifier:
     & Sebastiani, F. (2016). Lightweight Random Indexing for Polylingual Text Classification. Journal of Artificial
     Intelligence Research, 57, 151-185.
     """
-    def __init__(self, parameters=None, reduction=0.):
+    def __init__(self, parameters=None, reduction=0., n_jobs=-1):
         """
         :param parameters: the parameters of the learner to optimize for via 5-fold cv
         :param reduction: the ratio of reduction of the dimensionality
         :param reweight: indicates whether to reweight the ri-matrix using tfidf
         """
         assert 0 <= reduction < 1, 'reduction ratio should be in range [0,1)'
-        self.model = MonolingualClassifier(parameters)
+        self.model = MonolingualClassifier(parameters=parameters, n_jobs=n_jobs)
         self.reduction = reduction
+        self.n_jobs = n_jobs
 
-    def fit(self, lX, ly, n_jobs=-1):
+    def fit(self, lX, ly):
         """
         trains one classifiers in the juxtaposed random indexed feature space
         :param lX: a dictionary {language_label: X csr-matrix}; the feature space is assumed to be juxtaposed
@@ -345,9 +362,12 @@ class LRIPolylingualClassifier:
         self.BoC = RandomIndexingBoC(latent_dimensions=dimensions, non_zeros=2) # extremely sparse
         Xtr = self.BoC.fit_transform(Xtr)
         print('model fit')
-        self.model.fit(Xtr, Ytr, n_jobs)
+        self.model.fit(Xtr, Ytr)
         self.time = time.time() - tinit
         return self
+
+    def transform(self, lX):
+        return _joblib_transform_multiling(self.BoC.transform, lX, n_jobs=self.n_jobs)
 
     def predict(self, lX):
         """
@@ -355,24 +375,23 @@ class LRIPolylingualClassifier:
         :return: a dictionary of predictions
         """
         assert self.model is not None, 'predict called before fit'
-        model = self.model
-        boc = self.BoC
-        return {lang:model.predict(boc.transform(lX[lang])) for lang in lX.keys()}
+        lZ = self.transform(lX)
+        return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
 
     def evaluate(self, lX, ly):
         print('evaluation')
         assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in evaluate'
-        model = self.model
-        boc = self.BoC
-        return {lang:model.evaluate(boc.transform(lX[lang]),ly[lang]) for lang in lX.keys()}
+        lZ = self.transform(lX)
+        return _joblib_eval_multiling(self.model.evaluate, lZ, ly, n_jobs=self.n_jobs)
 
 
 class JuxtaposedPolylingualClassifier:
 
-    def __init__(self, parameters=None):
-        self.model = MonolingualClassifier(parameters)
+    def __init__(self, parameters=None, n_jobs=-1):
+        self.model = MonolingualClassifier(parameters, n_jobs=n_jobs)
+        self.n_jobs = n_jobs
 
-    def fit(self, lX, ly, n_jobs=-1):
+    def fit(self, lX, ly):
         """
         trains one classifiers in the juxtaposed feature space
         :param lX: a dictionary {language_label: X csr-matrix}; the feature space is assumed to be juxtaposed
@@ -386,7 +405,7 @@ class JuxtaposedPolylingualClassifier:
         langs = list(lX.keys())
         Xtr = scipy.sparse.vstack([lX[lang] for lang in langs])
         Ytr = np.vstack([ly[lang] for lang in langs])
-        self.model.fit(Xtr, Ytr, n_jobs)
+        self.model.fit(Xtr, Ytr)
         self.time = time.time() - tinit
         return self
 
@@ -396,22 +415,23 @@ class JuxtaposedPolylingualClassifier:
         :return: a dictionary of predictions
         """
         assert self.model is not None, 'predict called before fit'
-        return {lang:self.model.predict(lX[lang]) for lang in lX.keys()}
+        return _joblib_transform_multiling(self.model.predict, lX, n_jobs=self.n_jobs)
 
     def evaluate(self, lX, ly):
         print('evaluation')
         assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in evaluate'
-        return {lang:self.model.evaluate(lX[lang],ly[lang]) for lang in lX.keys()}
+        return _joblib_eval_multiling(self.model.evaluate, lX, ly, n_jobs=self.n_jobs)
 
 
 class MonolingualClassifier:
 
-    def __init__(self, parameters=None):
-        self.learner = SVC(kernel='linear')
+    def __init__(self, base_learner=SVC(kernel='linear'), parameters=None, n_jobs=-1):
+        self.learner = base_learner
         self.parameters = parameters
         self.model = None
+        self.n_jobs = n_jobs
 
-    def fit(self, X, y, n_jobs=-1):
+    def fit(self, X, y):
         tinit = time.time()
         _sort_if_sparse(X)
 
@@ -420,7 +440,7 @@ class MonolingualClassifier:
             if self.parameters is not None:
                 self.parameters = [{'estimator__' + key: params[key] for key in params.keys()}
                                    for params in self.parameters]
-            self.model = OneVsRestClassifier(self.learner, n_jobs=n_jobs)
+            self.model = OneVsRestClassifier(self.learner, n_jobs=self.n_jobs)
         else:
             #not debugged
             self.model = self.learner
@@ -428,9 +448,10 @@ class MonolingualClassifier:
         # parameter optimization?
         if self.parameters:
             print('debug: optimizing parameters:', self.parameters)
-            self.model = GridSearchCV(self.model, param_grid=self.parameters, refit=True, cv=5, n_jobs=n_jobs,
+            self.model = GridSearchCV(self.model, param_grid=self.parameters, refit=True, cv=5, n_jobs=self.n_jobs,
                                       scoring=make_scorer(macroF1), error_score=0)
 
+        print('fitting:',self.model)
         self.model.fit(X,y)
         if isinstance(self.model, GridSearchCV):
             print('best parameters: ', self.model.best_params_)
@@ -440,7 +461,10 @@ class MonolingualClassifier:
     def decision_function(self, X):
         assert self.model is not None, 'predict called before fit'
         _sort_if_sparse(X)
-        return self.model.decision_function(X)
+        if hasattr(self.model, 'predict_proba'):
+            return self.model.predict_proba(X)
+        else:
+            return self.model.decision_function(X)
 
     def predict(self, X):
         assert self.model is not None, 'predict called before fit'
@@ -451,9 +475,40 @@ class MonolingualClassifier:
         y_ = self.predict(X)
         return _evaluate(y,y_)
 
+
 def _evaluate(y,y_):
-    return macroF1(y, y_), microF1(y, y_), macroK(y, y_), microK(y, y_)
+    return macroF1(y, y_), microF1(y, y_) #, macroK(y, y_), microK(y, y_)
+
 
 def _sort_if_sparse(X):
     if issparse(X) and not X.has_sorted_indices:
         X.sort_indices()
+
+def _joblib_eval_multiling(monolingual_eval, lX, ly, n_jobs=-1):
+    print('evaluation (n_jobs={})'.format(n_jobs))
+    if n_jobs == 1:
+        return {lang: monolingual_eval(lX[lang], ly[lang]) for lang in lX.keys()}
+    else:
+        langs = list(lX.keys())
+        evals = Parallel(n_jobs=n_jobs)(delayed(monolingual_eval)(lX[lang], ly[lang]) for lang in langs)
+        return {lang: evals[i] for i, lang in enumerate(langs)}
+
+def _joblib_transform_multiling(transformer, lX, n_jobs=-1):
+    if n_jobs == 1:
+        return {lang:transformer(lX[lang]) for lang in lX.keys()}
+    else:
+        langs = list(lX.keys())
+        transformations = Parallel(n_jobs=n_jobs)(delayed(transformer)(lX[lang]) for lang in langs)
+        return {lang: transformations[i] for i, lang in enumerate(langs)}
+
+
+def calibrated_multilabel_svm(params=None, calibration='sigmoid', cv=5, n_jobs=-1):
+    assert calibration in ['sigmoid', 'isotonic'], 'calibration should either be "sigmoid" or "isotonic"'
+
+    multilabel_svm = OneVsRestClassifier(SVC, n_jobs=n_jobs)
+    calibrated_svm = CalibratedClassifierCV(multilabel_svm, method=calibration, cv=cv)
+    if params:
+        params = [{'estimator__' + key: params[key] for key in params.keys()} for params in params]
+        calibrated_svm = GridSearchCV(calibrated_svm, param_grid=params, refit=True, cv=cv, n_jobs=n_jobs,
+                     scoring=make_scorer(macroF1), error_score=0)
+    return calibrated_svm

@@ -21,7 +21,7 @@ class PolylingualClassificationResults:
     def already_calculated(self, id):
         return (self.df['id'] == id).any()
 
-    def add_row(self, id, method, optimp, dataset, time, lang, macrof1, microf1, macrok, microk, notes=''):
+    def add_row(self, id, method, optimp, dataset, time, lang, macrof1, microf1, macrok=np.nan, microk=np.nan, notes=''):
         s = pd.Series([id, method, optimp, dataset, time, lang, macrof1, microf1, macrok, microk, notes], index=self.columns)
         self.df = self.df.append(s, ignore_index=True)
         if self.autoflush: self.flush()

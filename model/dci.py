@@ -56,8 +56,6 @@ class DistributionalCorrespondenceIndexing:
         # embed the feature space from each domain using the pivots of that domain
         self.dFP = {d:self.dcf_dist(dU[d].transpose(), dP[d].transpose()) for d in self.domains}
 
-
-
     # dX is a dictionary of {domain:dsm}, where dsm (distributional semantic model) is, e.g., a document-by-term csr_matrix
     def transform(self, dX):
         assert self.dFP is not None, 'transform method called before fit'
@@ -147,8 +145,3 @@ class DistributionalCorrespondenceIndexing:
                     dists[i, j] = self.dcf(self, U[i], V[j])
         return dists
 
-#
-# def vec_size(v):
-#     if issparse(v):
-#         return functools.reduce(operator.mul, v.shape, 1)
-#     return v.size

@@ -5,7 +5,6 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from data.reader.jrcacquis_reader import *
 from data.languages import lang_set, NLTK_LANGMAP, RCV2_LANGS_WITH_NLTK_STEMMING
 from data.reader.rcv_reader import fetch_RCV1, fetch_RCV2
-from data.reader.reuters21578_reader import fetch_reuters21579
 from data.reader.wikipedia_tools import fetch_wikipedia_multilingual, random_wiki_sample
 from data.text_preprocessor import NLTKLemmaTokenizer
 import pickle
@@ -266,45 +265,6 @@ def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home
         prepare_dataset_juxtaposed_matrices(langs, train_lang_doc_map, test_lang_doc_map, label_names, preprocess=[l for l in langs if l != 'en']).save(
             yuxta_path)
 
-def prepare_reuters21578(data_path=None, preprocess=True):
-
-    if not data_path:
-        data_path = get_data_home()
-
-    reuters_train = fetch_reuters21579(subset='train')
-    reuters_test = fetch_reuters21579(subset='test')
-
-    mlb = MultiLabelBinarizer()
-    mlb.fit(reuters_train.target)
-
-    multiling_dataset = MultilingualDataset()
-
-    nDtr = len(reuters_train.data)
-    nDte = len(reuters_test.data)
-    print("\nprocessing %d training and %d test for language en" % (nDtr, nDte))
-    if preprocess:
-        tfidf = TfidfVectorizer(strip_accents='unicode', min_df=3, sublinear_tf=True,
-                                    tokenizer=NLTKLemmaTokenizer('en', verbose=True),
-                                    stop_words=stopwords.words(NLTK_LANGMAP['en']))
-    else:
-        tfidf = TfidfVectorizer(strip_accents='unicode', min_df=3, sublinear_tf=True)
-
-    Xtr = tfidf.fit_transform(reuters_train.data)
-    Xte = tfidf.transform(reuters_test.data)
-    Ytr = mlb.transform(reuters_train.target)
-    Yte = mlb.transform(reuters_test.target)
-    Xtr.sort_indices()
-    Xte.sort_indices()
-
-    multiling_dataset.add('en', Xtr, Ytr, Xte, Yte, tr_ids=list(range(nDtr)), te_ids=list(range(nDtr, nDtr + nDte)))
-
-    multiling_dataset.show_dimensions()
-
-    outpath = join(data_path, 'reuters21578-multilingformat'+('-processed' if preprocess else '-raw')+'.pickle')
-    print('saving dataset in ' + outpath)
-    multiling_dataset.save(outpath)
-
-    return multiling_dataset
 
 #-----------------------------------------------------------------------------------------------------------------------
 #-----------------------------------------------------------------------------------------------------------------------
@@ -325,13 +285,8 @@ if __name__=='__main__':
     RCV1_PATH = '/media/moreo/1TB Volume/Datasets/RCV1-v2'
     RCV2_PATH = '/media/moreo/1TB Volume/Datasets/RCV2'
     #prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, RCV2_LANGS_WITH_NLTK_STEMMING+['en'], train_for_lang=1000, test_for_lang=1000)
-    # prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING+['en'], train_for_lang=100,
-    #                      test_for_lang=100, max_wiki=100)
-    # prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
-    #                      train_for_lang=1000,
-    #                      test_for_lang=1000, max_wiki=5000)
-
-    print('Building Reuters-21578 dataset...')
-    #prepare_reuters21578(preprocess=False)
-
-    prepare_reuters21578(preprocess=True)
+    prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING+['en'], train_for_lang=100,
+                         test_for_lang=100, max_wiki=100)
+    prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
+                         train_for_lang=1000,
+                         test_for_lang=1000, max_wiki=5000)
