@@ -36,7 +36,7 @@ class MultilingualDataset:
         return data
 
     def sort_indexes(self):
-        for (lang, ((Xtr,_,_),(Xte,_,_))) in self.langs():
+        for (lang, ((Xtr,_,_),(Xte,_,_))) in self.multiling_dataset.items():
             Xtr.sort_indices()
             Xte.sort_indices()
 
