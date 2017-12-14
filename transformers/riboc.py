@@ -23,7 +23,10 @@ class RandomIndexingBoC(object):
         assert X.shape[1] == self.ri_dict.shape[0], 'feature space is inconsistent with the RI dictionary'
         if self.ri_dict is None:
             raise ValueError("Error: transform method called before fit.")
-        return X.dot(self.ri_dict)
+        P = X.dot(self.ri_dict)
+        if issparse(P):
+            P.sort_indices()
+        return P
 
 
 def _create_random_index_dictionary(shape, k, normalized=False, format='csr', positive=False):

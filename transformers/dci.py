@@ -5,8 +5,11 @@ from scipy.sparse import csr_matrix, issparse
 from scipy.spatial.distance import cosine
 import operator
 import functools
-import math
+import math, sys
 import time
+from sklearn.externals.joblib import Parallel, delayed
+
+
 
 class DistributionalCorrespondenceIndexing:
 
@@ -15,7 +18,7 @@ class DistributionalCorrespondenceIndexing:
     valid_dcf = prob_dcf + vect_dcf
     valid_post = ['normal', 'l2', None]
 
-    def __init__(self, dcf='cosine', post='normal'):
+    def __init__(self, dcf='cosine', post='normal', n_jobs=-1):
         """
         :param dcf: a distributional correspondence function name (e.g., 'cosine') or a callable f(u,v) which measures
                 the distribucional correspondence between vectors u and v
@@ -37,6 +40,7 @@ class DistributionalCorrespondenceIndexing:
         self.post = post
         self.domains = None
         self.dFP = None
+        self.n_jobs = n_jobs
 
     def fit(self, dU, dP):
         """
@@ -54,25 +58,26 @@ class DistributionalCorrespondenceIndexing:
             "inconsistent dimensions between distributional and pivot spaces"
         self.dimensions = list(dP.values())[0].shape[1]
         # embed the feature space from each domain using the pivots of that domain
-        self.dFP = {d:self.dcf_dist(dU[d].transpose(), dP[d].transpose()) for d in self.domains}
+        #self.dFP = {d:self.dcf_dist(dU[d].transpose(), dP[d].transpose()) for d in self.domains}
+        transformations = Parallel(n_jobs=self.n_jobs)(delayed(self.dcf_dist)(dU[d].transpose(),dP[d].transpose()) for d in self.domains)
+        self.dFP = {d: transformations[i] for i, d in enumerate(self.domains)}
+
+    def _dom_transform(self, X, FP):
+        _X = X.dot(FP)
+        if self.post == 'l2':
+            _X = normalize(_X, norm='l2', axis=1)
+        elif self.post == 'normal':
+            std = np.clip(np.std(_X, axis=0), 1e-5, None)
+            _X = (_X - np.mean(_X, axis=0)) / std
+        return _X
 
     # dX is a dictionary of {domain:dsm}, where dsm (distributional semantic model) is, e.g., a document-by-term csr_matrix
     def transform(self, dX):
         assert self.dFP is not None, 'transform method called before fit'
         assert set(dX.keys()).issubset(self.domains), 'domains in dX are not scope'
-
-        _dX = {}
-        for d in dX.keys():
-            X = dX[d]
-            dFP = self.dFP[d]
-            _X = X.dot(dFP)
-            if self.post == 'l2':
-                _X = normalize(_X, norm='l2', axis=1)
-            elif self.post == 'normal':
-                _X = (_X - np.mean(_X, axis=0)) / np.std(_X, axis=0)
-            _dX[d] = _X
-
-        return _dX
+        domains = list(dX.keys())
+        transformations = Parallel(n_jobs=self.n_jobs)(delayed(self._dom_transform)(dX[d], self.dFP[d]) for d in domains)
+        return {d: transformations[i] for i, d in enumerate(domains)}
 
     def fit_transform(self, dU, dP, dX):
         return self.fit(dU, dP).transform(dX)
@@ -91,13 +96,8 @@ class DistributionalCorrespondenceIndexing:
         tnr = (tn*1./den2) if den2!=0 else 0.
         return tpr + tnr - 1
 
-    def cosine(self, u, v):
-        pu = self._prevalence(u)
-        pv = self._prevalence(v)
-        return cosine(u,v) - np.sqrt(pu*pv)
-
-    def pmi(self, u, v):
-        tp, fp, fn, tn, D = self._get_4cellcounters(u,v)
+    def pmi(self, u, v, D):
+        tp, fp, fn, tn = self._get_4cellcounters(u, v, D)
 
         Pxy = tp * 1. / D
         Pxny = fp * 1. / D
@@ -108,7 +108,16 @@ class DistributionalCorrespondenceIndexing:
         if (Px == 0 or Py == 0 or Pxy == 0):
             return 0.0
 
-        return math.log2(Pxy / (Px * Py))
+        score =  math.log2(Pxy / (Px * Py))
+        if np.isnan(score) or np.isinf(score):
+            print('NAN')
+            sys.exit()
+        return score
+
+    def cosine(self, u, v):
+        pu = self._prevalence(u)
+        pv = self._prevalence(v)
+        return cosine(u, v) - np.sqrt(pu * pv)
 
     def _get_4cellcounters(self, u, v, D):
         """

@@ -9,7 +9,7 @@ from data.reader.reuters21578_reader import fetch_reuters21579
 from data.reader.wikipedia_tools import fetch_wikipedia_multilingual, random_wiki_sample
 from data.text_preprocessor import NLTKLemmaTokenizer
 import pickle
-from learner.learners import *
+from learning.learners import *
 from random import shuffle
 from sklearn.model_selection import train_test_split
 
@@ -69,7 +69,7 @@ def _preprocess(documents, lang):
 
 
 # creates a MultilingualDataset where matrices lie in language-specific feature spaces
-def prepare_dataset_independent_matrices(langs, training_docs, test_docs, label_names, wiki_docs=[], preprocess=None):
+def prepare_dataset_independent_matrices(langs, training_docs, test_docs, label_names, wiki_docs=[]):
     """
     :param langs: list of languages (str)
     :param training_docs: map {lang:doc-list} where each doc is a tuple (text, categories, id)
@@ -92,12 +92,9 @@ def prepare_dataset_independent_matrices(langs, training_docs, test_docs, label_
         tr_data, tr_labels, IDtr = zip(*training_docs[lang])
         te_data, te_labels, IDte = zip(*test_docs[lang])
 
-        if preprocess and lang in preprocess:
-            tfidf = TfidfVectorizer(strip_accents='unicode', min_df=3, sublinear_tf=True,
+        tfidf = TfidfVectorizer(strip_accents='unicode', min_df=3, sublinear_tf=True,
                                 tokenizer=NLTKLemmaTokenizer(lang, verbose=True),
                                 stop_words=stopwords.words(NLTK_LANGMAP[lang]))
-        else:
-            tfidf = TfidfVectorizer(strip_accents='unicode', min_df=3, sublinear_tf=True)
 
         Xtr = tfidf.fit_transform(tr_data)
         Xte = tfidf.transform(te_data)
@@ -116,7 +113,7 @@ def prepare_dataset_independent_matrices(langs, training_docs, test_docs, label_
         return multiling_dataset
 
 # creates a MultilingualDataset where matrices shares a single yuxtaposed feature space
-def prepare_dataset_juxtaposed_matrices(langs, training_docs, test_docs, label_names, preprocess):
+def prepare_dataset_juxtaposed_matrices(langs, training_docs, test_docs, label_names):
 
     mlb = MultiLabelBinarizer()
     mlb.fit([label_names])
@@ -127,9 +124,8 @@ def prepare_dataset_juxtaposed_matrices(langs, training_docs, test_docs, label_n
         print("\nprocessing %d training and %d test for language <%s>" % (len(training_docs[lang]), len(test_docs[lang]), lang))
         tr_data, tr_labels, tr_ID = zip(*training_docs[lang])
         te_data, te_labels, te_ID = zip(*test_docs[lang])
-        if preprocess and lang in preprocess:
-            tr_data = _preprocess(tr_data, lang)
-            te_data = _preprocess(te_data, lang)
+        tr_data = _preprocess(tr_data, lang)
+        te_data = _preprocess(te_data, lang)
         tr_data_stack.extend(tr_data)
         multiling_dataset.add(lang, tr_data, tr_labels, te_data, te_labels, tr_ID, te_ID)
 
@@ -211,7 +207,7 @@ def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home
     assert set(langs).issubset(set(RCV2_LANGS_WITH_NLTK_STEMMING+['en'])), \
         "languages not in RCV1-v2/RCV2 scope or not in valid for NLTK's processing"
 
-    config_name = 'rcvTRUE_nltk_trByLang'+str(train_for_lang)+'_teByLang'+str(test_for_lang)+'_processed'
+    config_name = 'rcv1-2_nltk_trByLang'+str(train_for_lang)+'_teByLang'+str(test_for_lang)+'_processed'
     indep_path = join(outpath, config_name + '.pickle')
     upper_path = join(outpath, config_name + '_upper.pickle')
     yuxta_path = join(outpath, config_name + '_yuxtaposed.pickle')
@@ -230,7 +226,7 @@ def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home
             for doc in rcv2_documents:
                 doc.categories = list(set(doc.categories).intersection(label_names_set))
 
-    print('rcv1: {} train, {} test'.format(len(rcv1_train_documents), 0))
+    print('rcv1: {} train, {} test, {} categories'.format(len(rcv1_train_documents), 0, len(label_names)))
     print('rcv2: {} documents'.format(len(rcv2_documents)), Counter([doc.lang for doc in rcv2_documents]))
 
     lang_docs = {lang: [d for d in rcv1_train_documents + rcv2_documents if d.lang == lang] for lang in langs}
@@ -247,8 +243,7 @@ def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home
     if not exists(upper_path):
         training_docs_eng_only = {'en':train_lang_doc_map['en']}
         test_docs_eng_only = {'en':test_lang_doc_map['en']}
-        prepare_dataset_independent_matrices(['en'], training_docs_eng_only, test_docs_eng_only, label_names, preprocess=None)\
-            .save(upper_path)
+        prepare_dataset_independent_matrices(['en'], training_docs_eng_only, test_docs_eng_only, label_names).save(upper_path)
 
     train_lang_doc_map['en'] = train_lang_doc_map['en'][:train_for_lang]
     for lang in langs:
@@ -264,14 +259,13 @@ def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home
         wiki_docs = random_wiki_sample(wiki_docs, max_wiki)
 
         lang_data, wiki_docs = prepare_dataset_independent_matrices(langs, train_lang_doc_map, test_lang_doc_map,
-                                                                    label_names, wiki_docs, preprocess=[l for l in langs if l != 'en'])
+                                                                    label_names, wiki_docs)
         lang_data.save(indep_path)
         pickle.dump(wiki_docs, open(wiki_path, 'wb'), pickle.HIGHEST_PROTOCOL)
 
     print('Generating yuxtaposed dataset...')
     if not exists(yuxta_path):
-        prepare_dataset_juxtaposed_matrices(langs, train_lang_doc_map, test_lang_doc_map, label_names, preprocess=[l for l in langs if l != 'en']).save(
-            yuxta_path)
+        prepare_dataset_juxtaposed_matrices(langs, train_lang_doc_map, test_lang_doc_map, label_names).save(yuxta_path)
 
 def prepare_reuters21578(data_path=None, preprocess=True):
 
@@ -329,16 +323,17 @@ if __name__=='__main__':
 
     print('Building RCV1-v2/2 datasets...')
 
-    RCV1_PATH = '/media/moreo/1TB Volume/Datasets/RCV1-v2'
+    RCV1_PATH = '/media/moreo/1TB Volume/Datasets/RCV1-v2/unprocessed_corpus'
     RCV2_PATH = '/media/moreo/1TB Volume/Datasets/RCV2'
-    #prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, RCV2_LANGS_WITH_NLTK_STEMMING+['en'], train_for_lang=1000, test_for_lang=1000)
-    # prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING+['en'], train_for_lang=100,
-    #                      test_for_lang=100, max_wiki=100)
-    # prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
-    #                      train_for_lang=1000,
-    #                      test_for_lang=1000, max_wiki=5000)
+    prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING+['en'],
+                         train_for_lang=100,
+                         test_for_lang=100,
+                         max_wiki=100)
+    prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
+                         train_for_lang=1000,
+                         test_for_lang=1000,
+                         max_wiki=5000)
 
     print('Building Reuters-21578 dataset...')
     #prepare_reuters21578(preprocess=False)
-
-    prepare_reuters21578(preprocess=True)
+    #prepare_reuters21578(preprocess=True)
