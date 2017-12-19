@@ -13,6 +13,7 @@ import zipfile
 from data.languages import JRC_LANGS
 from collections import Counter
 from random import shuffle
+from data.languages import lang_set
 
 """
 JRC Acquis' Nomenclature:
@@ -142,6 +143,7 @@ def _get_categories(request):
 
 def fetch_jrcacquis(langs=None, data_path=None, years=None, ignore_unclassified=True, cat_filter=None, cat_threshold=0,
                     parallel=None, most_frequent=-1, DOWNLOAD_URL_BASE ='http://optima.jrc.it/Acquis/JRC-Acquis.3.0/corpus/'):
+
     assert parallel in [None, 'force', 'avoid'], 'parallel mode not supported'
     if not langs:
         langs = JRC_LANGS
@@ -276,3 +278,35 @@ def inspect_eurovoc(data_path, eurovoc_skos_core_concepts_filename='eurovoc_in_s
     pickle.dump(selected_concepts, open(fullpath_pickle, 'wb'), pickle.HIGHEST_PROTOCOL)
 
     return selected_concepts
+
+if __name__ == '__main__':
+
+    def single_label_fragment(doclist):
+        single = [d for d in doclist if len(d.categories) < 2]
+        final_categories = set([d.categories[0] if d.categories else [] for d in single])
+        print('{} single-label documents ({} categories) from the original {} documents'.format(len(single),
+                                                                                                len(final_categories),
+                                                                                                len(doclist)))
+        return single, list(final_categories)
+
+    train_years = list(range(1986, 2006))
+    test_years = [2006]
+    cat_policy = 'all'
+    most_common_cat = 300
+    JRC_DATAPATH = "/media/moreo/1TB Volume/Datasets/JRC_Acquis_v3"
+    langs = lang_set['JRC_NLTK']
+    cat_list = inspect_eurovoc(JRC_DATAPATH, select=cat_policy)
+
+    training_docs, label_names = fetch_jrcacquis(langs=langs, data_path=JRC_DATAPATH, years=train_years,cat_filter=cat_list, cat_threshold=1, parallel=None,most_frequent=most_common_cat)
+    test_docs, label_namestest = fetch_jrcacquis(langs=langs, data_path=JRC_DATAPATH, years=test_years, cat_filter=label_names,parallel='force')
+
+    print('JRC-train: {} documents, {} labels'.format(len(training_docs), len(label_names)))
+    print('JRC-test: {} documents, {} labels'.format(len(test_docs), len(label_namestest)))
+
+    training_docs, label_names = single_label_fragment(training_docs)
+    test_docs, label_namestest = single_label_fragment(test_docs)
+
+    print('JRC-train: {} documents, {} labels'.format(len(training_docs), len(label_names)))
+    print('JRC-test: {} documents, {} labels'.format(len(test_docs), len(label_namestest)))
+
+

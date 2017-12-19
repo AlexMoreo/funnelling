@@ -1,9 +1,6 @@
 import numpy as np
 import scipy
 import time
-
-from cupshelpers.ppds import normalize
-
 from transformers.clesa import CLESA
 from transformers.riboc import RandomIndexingBoC
 from transformers.dci import DistributionalCorrespondenceIndexing
@@ -19,65 +16,6 @@ from sklearn.externals.joblib import Parallel, delayed
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.preprocessing import normalize
-
-
-class ClassJuxtaEmbeddingPolylingualClassifier:
-    """
-    This classifier combines the juxtaposed space with the class embeddings before training the final classifier
-    """
-    def __init__(self, auxiliar_learner, final_learner, alpha=0.5, c_parameters=None, y_parameters=None, n_jobs=-1):
-        """
-        :param c_parameters: parameters for the previous class-embedding projector
-        :param y_parameters: parameters for the final combined learner
-        """
-        self.auxiliar_learner = auxiliar_learner
-        self.final_learner = final_learner
-        self.alpha = alpha
-        self.c_parameters=c_parameters
-        self.y_parameters = y_parameters
-        self.doc_projector = NaivePolylingualClassifier(base_learner=auxiliar_learner, parameters=self.c_parameters, n_jobs=n_jobs)
-        self.model = None
-        self.n_jobs = n_jobs
-
-    def fit(self, lX, ly):
-        tinit = time.time()
-        print('fitting the projectors...')
-        self.doc_projector.fit(lX, ly)
-
-        print('projecting the documents')
-        langs = list(lX.keys())
-        lZ = self.doc_projector.predict_proba(lX)
-
-        print('joining X and Z spaces')
-        Z = np.vstack([lZ[lang] for lang in langs])  # Z is the language independent space
-        #Z /= np.linalg.norm(Z, axis=1, keepdims=True)
-        X = scipy.sparse.vstack([lX[lang] for lang in langs])
-        XZ = self._XZhstack(X, Z)
-        Y = np.vstack([ly[lang] for lang in langs])
-
-        print('fitting the XZ-space of shape={}'.format(XZ.shape))
-        self.model = MonolingualClassifier(base_learner=self.final_learner, parameters=self.y_parameters, n_jobs=self.n_jobs)
-        self.model.fit(XZ,Y)
-        self.time = time.time() - tinit
-        return self
-
-    def predict(self, lX):
-        """
-        :param lX: a dictionary {language_label: X csr-matrix}
-        :return: a dictionary of predictions
-        """
-        assert self.model is not None, 'predict called before fit'
-        lZ = self.doc_projector.decision_function(lX)
-        return {lang:self.model.predict(self._XZhstack(lX[lang], lZ[lang])) for lang in lZ.keys()}
-
-    def _XZhstack(self, X, Z):
-        assert isinstance(X, csr_matrix), 'expected csr_matrix in X-space'
-        assert isinstance(Z, np.ndarray), 'expected np.ndarray in Z-space'
-        alpha=self.alpha
-        Z = csr_matrix(Z)
-        XZ = csr_matrix(scipy.sparse.hstack([X * alpha, Z * (1.-alpha)]))
-        normalize(XZ, norm='l2', axis=1, copy=False)
-        return XZ
 
 
 class ClassEmbeddingPolylingualClassifier:
@@ -134,7 +72,7 @@ class ClassEmbeddingPolylingualClassifier:
         if self.folded_projections == 1:
             Z, zy = self._get_zspace(lX, ly)
         else:
-            print('stratified split of {} folds'.format(self.folded_projections))
+            print('split of {} folds'.format(self.folded_projections))
             skf = KFold(n_splits=self.folded_projections, shuffle=True)
 
             Z, zy = [], []
@@ -464,9 +402,69 @@ class MonolingualClassifier:
         return self.model.predict(X)
 
 
+class ClassJuxtaEmbeddingPolylingualClassifier:
+    """
+    This classifier combines the juxtaposed space with the class embeddings before training the final classifier
+    """
+    def __init__(self, auxiliar_learner, final_learner, alpha=0.5, c_parameters=None, y_parameters=None, n_jobs=-1):
+        """
+        :param c_parameters: parameters for the previous class-embedding projector
+        :param y_parameters: parameters for the final combined learner
+        """
+        self.auxiliar_learner = auxiliar_learner
+        self.final_learner = final_learner
+        self.alpha = alpha
+        self.c_parameters=c_parameters
+        self.y_parameters = y_parameters
+        self.doc_projector = NaivePolylingualClassifier(base_learner=auxiliar_learner, parameters=self.c_parameters, n_jobs=n_jobs)
+        self.model = None
+        self.n_jobs = n_jobs
+
+    def fit(self, lX, ly):
+        tinit = time.time()
+        print('fitting the projectors...')
+        self.doc_projector.fit(lX, ly)
+
+        print('projecting the documents')
+        langs = list(lX.keys())
+        lZ = self.doc_projector.predict_proba(lX)
+
+        print('joining X and Z spaces')
+        Z = np.vstack([lZ[lang] for lang in langs])  # Z is the language independent space
+        #Z /= np.linalg.norm(Z, axis=1, keepdims=True)
+        X = scipy.sparse.vstack([lX[lang] for lang in langs])
+        XZ = self._XZhstack(X, Z)
+        Y = np.vstack([ly[lang] for lang in langs])
+
+        print('fitting the XZ-space of shape={}'.format(XZ.shape))
+        self.model = MonolingualClassifier(base_learner=self.final_learner, parameters=self.y_parameters, n_jobs=self.n_jobs)
+        self.model.fit(XZ,Y)
+        self.time = time.time() - tinit
+        return self
+
+    def predict(self, lX):
+        """
+        :param lX: a dictionary {language_label: X csr-matrix}
+        :return: a dictionary of predictions
+        """
+        assert self.model is not None, 'predict called before fit'
+        lZ = self.doc_projector.decision_function(lX)
+        return {lang:self.model.predict(self._XZhstack(lX[lang], lZ[lang])) for lang in lZ.keys()}
+
+    def _XZhstack(self, X, Z):
+        assert isinstance(X, csr_matrix), 'expected csr_matrix in X-space'
+        assert isinstance(Z, np.ndarray), 'expected np.ndarray in Z-space'
+        alpha=self.alpha
+        Z = csr_matrix(Z)
+        XZ = csr_matrix(scipy.sparse.hstack([X * alpha, Z * (1.-alpha)]))
+        normalize(XZ, norm='l2', axis=1, copy=False)
+        return XZ
+
+
 def _sort_if_sparse(X):
     if issparse(X) and not X.has_sorted_indices:
         X.sort_indices()
+
 
 def _joblib_transform_multiling(transformer, lX, n_jobs=-1):
     if n_jobs == 1:

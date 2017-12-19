@@ -1,6 +1,7 @@
 from os import listdir, makedirs
 from os.path import isdir, isfile, join, exists, dirname
-from sklearn.externals.six.moves import urllib
+#from sklearn.externals.six.moves import urllib
+import urllib
 
 
 def download_file(url, archive_filename):
