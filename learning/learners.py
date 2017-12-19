@@ -24,7 +24,7 @@ class ClassEmbeddingPolylingualClassifier:
     decision score phi_l(d,ci) of an auxiliar classifier phi_l trained on category ci for documents in language l;
     then trains one single classifier for all documents in this space, irrespective of their originary language
     """
-    def __init__(self, auxiliar_learner, final_learner, parameters=None, z_parameters=None, folded_projections=1, n_jobs=-1):
+    def __init__(self, auxiliar_learner, final_learner, parameters=None, z_parameters=None, folded_projections=1, n_jobs=-1, gridsearch_scorer=None):
         """
         :param parameters: parameters for the learner in the doc_projector
         :param z_parameters: parameters for the learner in the z-space
@@ -38,9 +38,10 @@ class ClassEmbeddingPolylingualClassifier:
         self.final_learner = final_learner
         self.parameters=parameters
         self.z_parameters = z_parameters
-        self.doc_projector = NaivePolylingualClassifier(self.auxiliar_learner, self.parameters, n_jobs=n_jobs)
+        self.doc_projector = NaivePolylingualClassifier(self.auxiliar_learner, self.parameters, n_jobs=n_jobs, gridsearch_scorer=gridsearch_scorer)
         self.folded_projections = folded_projections
         self.n_jobs = n_jobs
+        self.scorer=gridsearch_scorer
 
     def _get_zspace(self, lXtr, lYtr, lXproj=None, lYproj=None):
         """
@@ -97,7 +98,7 @@ class ClassEmbeddingPolylingualClassifier:
             self.doc_projector.fit(lX, ly)
 
         print('fitting the Z-space of shape={}'.format(Z.shape))
-        self.model = MonolingualClassifier(base_learner=self.final_learner, parameters=self.z_parameters, n_jobs=self.n_jobs)
+        self.model = MonolingualClassifier(base_learner=self.final_learner, parameters=self.z_parameters, n_jobs=self.n_jobs, gridsearch_scorer=self.scorer)
         self.model.fit(Z,zy)
         self.time = time.time() - tinit
         return self
@@ -116,11 +117,12 @@ class NaivePolylingualClassifier:
     """
     Is a mere set of independet MonolingualClassifiers
     """
-    def __init__(self, base_learner, parameters=None, n_jobs=-1):
+    def __init__(self, base_learner, parameters=None, n_jobs=-1, gridsearch_scorer=None):
         self.base_learner = base_learner
         self.parameters = parameters
         self.model = None
         self.n_jobs = n_jobs
+        self.scorer = gridsearch_scorer
 
     def fit(self, lX, ly):
         """
@@ -132,7 +134,9 @@ class NaivePolylingualClassifier:
         tinit = time.time()
         assert set(lX.keys()) == set(ly.keys()), 'inconsistent language mappings in fit'
         langs = list(lX.keys())
-        models = Parallel(n_jobs=self.n_jobs)(delayed(MonolingualClassifier(self.base_learner, parameters=self.parameters).fit)(lX[lang],ly[lang]) for lang in langs)
+        models = Parallel(n_jobs=self.n_jobs)\
+            (delayed(MonolingualClassifier(self.base_learner, parameters=self.parameters, gridsearch_scorer=self.scorer).fit)
+             (lX[lang],ly[lang]) for lang in langs)
         self.model = {lang: models[i] for i, lang in enumerate(langs)}
         self.time = time.time() - tinit
         return self
@@ -352,11 +356,12 @@ class JuxtaposedPolylingualClassifier:
 
 class MonolingualClassifier:
 
-    def __init__(self, base_learner, parameters=None, n_jobs=-1):
+    def __init__(self, base_learner, parameters=None, n_jobs=-1, gridsearch_scorer=None):
         self.learner = base_learner
         self.parameters = parameters
         self.model = None
         self.n_jobs = n_jobs
+        self.scorer=gridsearch_scorer
 
     def fit(self, X, y):
         tinit = time.time()
@@ -376,7 +381,7 @@ class MonolingualClassifier:
         if self.parameters:
             print('debug: optimizing parameters:', self.parameters)
             self.model = GridSearchCV(self.model, param_grid=self.parameters, refit=True, cv=5, n_jobs=self.n_jobs,
-                                      scoring=make_scorer(macroF1), error_score=0)
+                                      scoring=self.scorer, error_score=0)
 
         print('fitting:',self.model)
         self.model.fit(X,y)

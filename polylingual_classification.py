@@ -36,6 +36,7 @@ parser.add_option("-f", "--force", dest="force", action='store_true',
 #TODO: finish singlelabel-fragment
 #TODO: really make_scorer(macroF1) is the best choice?
 #TODO: probar feature selection?
+#TODO: learners: lasso?
 
 #note: Multinomial Naive-Bayes descargado: no está calibrado, no funciona con valores negativos, la adaptación a valores
 #reales es artificial
@@ -69,7 +70,7 @@ if __name__=='__main__':
 
     assert exists(op.dataset), 'Unable to find file '+str(op.dataset)
     assert op.learner in ['svm', 'lr', 'nb'], 'unexpected learner'
-    assert op.mode in ['class', 'naive', 'juxta', 'lri', 'lri-half', 'dci-lin', 'dci-pmi', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
+    assert op.mode in ['class','class-sc', 'naive','naive-sc', 'juxta', 'lri', 'lri-half', 'dci-lin', 'dci-pmi', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
 
     results = PolylingualClassificationResults(op.output)
 
@@ -88,9 +89,18 @@ if __name__=='__main__':
         classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                          final_learner=get_learner(calibrate=False),
                                                          parameters=get_params(), z_parameters=get_params(z_space=True)) #optimize only for z_params
+    elif op.mode == 'class-sc':
+        print('Learning Class-Embedding Poly-lingual Classifier')
+        classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
+                                                         final_learner=get_learner(calibrate=False),
+                                                         parameters=get_params(), z_parameters=get_params(z_space=True),
+                                                         gridsearch_scorer = make_scorer(macroF1)) #optimize only for z_params
     elif op.mode == 'naive':
         print('Learning Naive Poly-lingual Classifier')
         classifier = NaivePolylingualClassifier(base_learner=get_learner(), parameters=get_params())
+    elif op.mode == 'naive-sc':
+        print('Learning Naive Poly-lingual Classifier')
+        classifier = NaivePolylingualClassifier(base_learner=get_learner(), parameters=get_params(), gridsearch_scorer=make_scorer(macroF1))
     elif op.mode == 'juxta':
         print('Learning Juxtaposed Poly-lingual Classifier')
         classifier = JuxtaposedPolylingualClassifier(base_learner=get_learner(), parameters=get_params())
