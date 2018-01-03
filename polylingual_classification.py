@@ -21,8 +21,13 @@ parser.add_option("-n", "--note", dest="note",
                   help="A description note to be added to the result file", type=str,  default='')
 parser.add_option("-c", "--optimc", dest="optimc", action='store_true',
                   help="Optimices hyperparameters", default=False)
+parser.add_option("-b", "--binary", dest="binary",type=int,
+                  help="Run experiments on a single category specified with this parameter", default=-1)
+parser.add_option("-L", "--languages", dest="languages",type=int,
+                  help="Chooses the maximum number of random languages to consider", default=-1)
 parser.add_option("-f", "--force", dest="force", action='store_true',
                   help="Run even if the result was already computed", default=False)
+
 
 
 #TODO: more baselines
@@ -34,12 +39,15 @@ parser.add_option("-f", "--force", dest="force", action='store_true',
 #TODO: arreglar la calibración y la búsqueda de parámetros
 #TODO: fisher scores
 #TODO: finish singlelabel-fragment
-#TODO: really make_scorer(macroF1) is the best choice?
 #TODO: probar feature selection?
 #TODO: learners: lasso?
+#TODO: dejo el single-fragment a False, o sea que genero un falso multilabel
+#TODO: class-10 creo que el problema esta en como vienen representadas las categorias raras, los unicos ejemplos positivos
+#      son clasificados por clasificadores provenientes de un fold donde no habia ningun ejemplo positivo
 
 #note: Multinomial Naive-Bayes descargado: no está calibrado, no funciona con valores negativos, la adaptación a valores
 #reales es artificial
+#note: really make_scorer(macroF1) seems to be better with the actual loss [tough not significantly]
 
 def get_learner(calibrate=False):
     if op.learner == 'svm':
@@ -56,9 +64,7 @@ def get_params(z_space=False):
 
     c_range = [1e4, 1e3, 1e2, 1e1, 1, 1e-1]
     if op.learner == 'svm':
-        params = [{'C': c_range}] if not z_space else \
-            [{'kernel': ['linear'], 'C': c_range},
-             {'kernel': ['rbf'], 'gamma': [1e-3, 1e-4], 'C': c_range}]
+        params = [{'C': c_range}] if not z_space else [{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4], 'C': c_range}]
     elif op.learner == 'nb':
         params = [{'alpha': [1.0, .1, .05, .01, .001, 0.0]}]
     elif op.learner == 'lr':
@@ -70,37 +76,50 @@ if __name__=='__main__':
 
     assert exists(op.dataset), 'Unable to find file '+str(op.dataset)
     assert op.learner in ['svm', 'lr', 'nb'], 'unexpected learner'
-    assert op.mode in ['class','class-sc', 'naive','naive-sc', 'juxta', 'lri', 'lri-half', 'dci-lin', 'dci-pmi', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
+    assert op.mode in ['class','class-10-r','class-5-r', 'naive','naive-sc', 'juxta', 'lri', 'lri-half','lri-30k', 'dci-lin', 'dci-pmi', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
 
     results = PolylingualClassificationResults(op.output)
 
     dataset_file = os.path.basename(op.dataset)
-    result_id = dataset_file+'_'+op.mode+op.learner+('_optimC' if op.optimc else '')
+    result_id = dataset_file+'_'+op.mode+op.learner+('_optimC' if op.optimc else '')+\
+                ('_bin'+str(op.binary) if op.binary != -1 else '')+\
+                ('_langs'+str(op.languages) if op.languages != -1 else '')
+
     if not op.force and results.already_calculated(result_id):
         print('Experiment <'+result_id+'> already computed. Exit.')
         sys.exit()
 
     data = MultilingualDataset.load(op.dataset)
+    if op.binary != -1:
+        assert op.binary < data.num_categories(), 'category not in scope'
+        data.set_view(categories=np.array([op.binary]))
+    if op.languages != -1:
+        assert op.languages < len(data.langs()), 'too many languages'
+        languages = ['en'] + [l for l in data.langs() if l != 'en']
+        data.set_view(languages=languages[:op.languages])
     data.show_dimensions()
-    #data.show_category_prevalences()
+    data.show_category_prevalences()
 
     if op.mode == 'class':
         print('Learning Class-Embedding Poly-lingual Classifier')
         classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                          final_learner=get_learner(calibrate=False),
-                                                         parameters=get_params(), z_parameters=get_params(z_space=True)) #optimize only for z_params
-    elif op.mode == 'class-sc':
-        print('Learning Class-Embedding Poly-lingual Classifier')
+                                                         parameters=get_params(), z_parameters=get_params(z_space=True))
+    elif op.mode == 'class-10-r':
+        print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
         classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                          final_learner=get_learner(calibrate=False),
-                                                         parameters=get_params(), z_parameters=get_params(z_space=True),
-                                                         gridsearch_scorer = make_scorer(macroF1)) #optimize only for z_params
+                                                         parameters=None, z_parameters=get_params(z_space=True),
+                                                         folded_projections=10)
+    elif op.mode == 'class-5-r':
+        print('Learning 5-Fold CV Class-Embedding Poly-lingual Classifier')
+        classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
+                                                         final_learner=get_learner(calibrate=False),
+                                                         parameters=None, z_parameters=get_params(z_space=True),
+                                                         folded_projections=5)
     elif op.mode == 'naive':
         print('Learning Naive Poly-lingual Classifier')
         classifier = NaivePolylingualClassifier(base_learner=get_learner(), parameters=get_params())
-    elif op.mode == 'naive-sc':
-        print('Learning Naive Poly-lingual Classifier')
-        classifier = NaivePolylingualClassifier(base_learner=get_learner(), parameters=get_params(), gridsearch_scorer=make_scorer(macroF1))
     elif op.mode == 'juxta':
         print('Learning Juxtaposed Poly-lingual Classifier')
         classifier = JuxtaposedPolylingualClassifier(base_learner=get_learner(), parameters=get_params())
@@ -112,6 +131,10 @@ if __name__=='__main__':
         assert op.learner != 'nb', 'nb operates only on positive matrices'
         print('Learning Lightweight Random Indexing Poly-lingual Classifier')
         classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params(), reduction=0.5)
+    elif op.mode == 'lri-30k':
+        assert op.learner != 'nb', 'nb operates only on positive matrices'
+        print('Learning Lightweight Random Indexing Poly-lingual Classifier')
+        classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params(), reduction=30000)
     elif op.mode == 'dci-lin':
         assert op.learner!='nb', 'nb operates only on positive matrices'
         print('Learning Distributional Correspondence Indexing with Linear Poly-lingual Classifier')
@@ -150,7 +173,7 @@ if __name__=='__main__':
         print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (lang, macrof1, microf1))
         #results.add_row(result_id, op.mode, op.optimc, dataset_name, classifier.time, lang, macrof1, microf1, macrok, microk, notes=op.note)
         notes=op.note # + classifier.best_params
-        results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, classifier.time, lang, macrof1, microf1, notes=op.note)
+        results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, op.binary, op.languages, classifier.time, lang, macrof1, microf1, notes=op.note)
 
 
 

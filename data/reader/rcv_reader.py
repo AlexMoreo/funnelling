@@ -8,6 +8,7 @@ from os.path import join, exists
 from util.file import download_file_if_not_exists
 import re
 from collections import Counter
+import numpy as np
 
 """
 RCV2's Nomenclature:
@@ -26,6 +27,7 @@ htw = Chinese
 no = Norwegian
 """
 
+RCV1_TOPICHIER_URL = "http://www.ai.mit.edu/projects/jmlr/papers/volume5/lewis04a/a02-orig-topics-hierarchy/rcv1.topics.hier.orig"
 RCV1PROC_BASE_URL= 'http://www.ai.mit.edu/projects/jmlr/papers/volume5/lewis04a/a12-token-files'
 RCV1_BASE_URL = "http://www.daviddlewis.com/resources/testcollections/rcv1/"
 RCV2_BASE_URL = "http://trec.nist.gov/data/reuters/reuters.html"
@@ -131,6 +133,10 @@ class IDRangeException(Exception): pass
 #     return request, labels
 
 
+
+nwords = []
+
+
 def parse_document(xml_content, assert_lang=None, valid_id_range=None):
     root = ET.fromstring(xml_content)
     if assert_lang:
@@ -158,9 +164,19 @@ def parse_document(xml_content, assert_lang=None, valid_id_range=None):
     if doc_headline is None or doc_headline in doc_title: doc_headline = ''
     text = '\n'.join([doc_title, doc_headline, doc_body]).strip()
 
+    text_length = len(text.split())
+    global nwords
+    nwords.append(text_length)
+    # if text_length < min_words:
+    #     raise IDRangeException
+
+
+
     return RCV_Document(id=doc_id, text=text, categories=doc_categories, date=doc_date, lang=assert_lang)
 
 def fetch_RCV1(data_path, split='all'):
+
+
     assert split in ['train', 'test', 'all'], 'split should be "train", "test", or "all"'
 
     request = []
@@ -181,6 +197,8 @@ def fetch_RCV1(data_path, split='all'):
         split_range = (26151, 810596)
         expected = test_documents
 
+    global nwords
+    nwords=[]
     for part in list_files(data_path):
         if not re.match('\d+\.zip', part): continue
         target_file = join(data_path, part)
@@ -203,6 +221,7 @@ def fetch_RCV1(data_path, split='all'):
             if read_documents == expected: break
         if read_documents == expected: break
     print()
+    print('ave:{} std {} min {} max {}'.format(np.mean(nwords), np.std(nwords), np.min(nwords), np.max(nwords)))
     return request, list(labels)
 
 
@@ -215,6 +234,8 @@ def fetch_RCV2(data_path, languages=None):
 
     request = []
     labels = set()
+    global nwords
+    nwords=[]
     for lang in languages:
         path = join(data_path, RCV2_LANG_DIR[lang])
         lang_docs_read = 0
@@ -237,10 +258,47 @@ def fetch_RCV2(data_path, languages=None):
                     pass
                 print('\r[{}] read {} documents, {} for language {}'.format(RCV2_LANG_DIR[lang]+'/'+part, len(request), lang_docs_read, lang), end='')
         print()
+    print('ave:{} std {} min {} max {}'.format(np.mean(nwords), np.std(nwords), np.min(nwords), np.max(nwords)))
     return request, list(labels)
 
 
+def fetch_topic_hierarchy(path, topics='all'):
+    assert topics in ['all', 'leaves']
+
+    download_file_if_not_exists(RCV1_TOPICHIER_URL, path)
+    hierarchy = {}
+    for line in open(path, 'rt'):
+        parts = line.strip().split()
+        parent,child = parts[1],parts[3]
+        if parent not in hierarchy:
+            hierarchy[parent]=[]
+        hierarchy[parent].append(child)
+
+    del hierarchy['None']
+    del hierarchy['Root']
+    print(hierarchy)
+
+    if topics=='all':
+        topics = set(hierarchy.keys())
+        for parent in hierarchy.keys():
+            topics.update(hierarchy[parent])
+        return list(topics)
+    elif topics=='leaves':
+        parents = set(hierarchy.keys())
+        childs = set()
+        for parent in hierarchy.keys():
+            childs.update(hierarchy[parent])
+        return list(childs.difference(parents))
+
+
 if __name__=='__main__':
+    import sys
+
+    topics = fetch_topic_hierarchy("/media/moreo/1TB Volume/Datasets/RCV1-v2/rcv1.topics.hier.orig", topics='leaves')
+    print(len(topics))
+    print(topics)
+
+    sys.exit()
 
     def single_label_fragment(doclist):
         single = [d for d in doclist if len(d.categories) < 2]

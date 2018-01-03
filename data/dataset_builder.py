@@ -4,7 +4,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import MultiLabelBinarizer
 from data.reader.jrcacquis_reader import *
 from data.languages import lang_set, NLTK_LANGMAP, RCV2_LANGS_WITH_NLTK_STEMMING
-from data.reader.rcv_reader import fetch_RCV1, fetch_RCV2
+from data.reader.rcv_reader import fetch_RCV1, fetch_RCV2, fetch_topic_hierarchy
 from data.reader.reuters21578_reader import fetch_reuters21579
 from data.reader.wikipedia_tools import fetch_wikipedia_multilingual, random_wiki_sample
 from data.text_preprocessor import NLTKLemmaTokenizer
@@ -28,8 +28,9 @@ class MultilingualDataset:
         return self
 
     def __getitem__(self, item):
-        print(item)
-        return self.multiling_dataset[item]
+        if item in self.langs():
+            return self.multiling_dataset[item]
+        return None
 
     @classmethod
     def load(cls, file):
@@ -42,47 +43,66 @@ class MultilingualDataset:
             Xtr.sort_indices()
             Xte.sort_indices()
 
+    def set_view(self, categories=None, languages=None):
+        if categories is not None:
+            if isinstance(categories, int):
+                categories = np.array([categories])
+            elif isinstance(categories, list):
+                categories = np.array(categories)
+            self.categories_view = categories
+        if languages is not None:
+            self.languages_view = languages
+
 
     def lXtr(self):
-        return {lang:Xtr for (lang, ((Xtr,_,_),_)) in self.multiling_dataset.items()}
+        return {lang:Xtr for (lang, ((Xtr,_,_),_)) in self.multiling_dataset.items() if lang in self.langs()}
 
     def lXte(self):
-        return {lang:Xte for (lang, (_,(Xte,_,_))) in self.multiling_dataset.items()}
+        return {lang:Xte for (lang, (_,(Xte,_,_))) in self.multiling_dataset.items() if lang in self.langs()}
 
     def lYtr(self):
-        return {lang:Ytr for (lang, ((_,Ytr,_),_)) in self.multiling_dataset.items()}
+        return {lang:self.cat_view(Ytr) for (lang, ((_,Ytr,_),_)) in self.multiling_dataset.items() if lang in self.langs()}
 
     def lYte(self):
-        return {lang:Yte for (lang, (_,(_,Yte,_))) in self.multiling_dataset.items()}
+        return {lang:self.cat_view(Yte) for (lang, (_,(_,Yte,_))) in self.multiling_dataset.items() if lang in self.langs()}
+
+    def cat_view(self, Y):
+        if hasattr(self, 'categories_view'):
+            return Y[:,self.categories_view]
+        else:
+            return Y
 
     def langs(self):
-        langs =  list(self.multiling_dataset.keys())
+        if hasattr(self, 'languages_view'):
+            langs = self.languages_view
+        else:
+            langs =  list(self.multiling_dataset.keys())
         langs.sort()
         return langs
 
+    def num_categories(self):
+        return self.lYtr()[self.langs()[0]].shape[1]
+
     def show_dimensions(self):
         for (lang, ((Xtr, Ytr, IDtr), (Xte, Yte, IDte))) in self.multiling_dataset.items():
-            print("Lang {}, Xtr={}, ytr={}, Xte={}, yte={}".format(lang, Xtr.shape, Ytr.shape, Xte.shape, Yte.shape))
+            if lang not in self.langs(): continue
+            print("Lang {}, Xtr={}, ytr={}, Xte={}, yte={}".format(lang, Xtr.shape, self.cat_view(Ytr).shape, Xte.shape, self.cat_view(Yte).shape))
 
     def show_category_prevalences(self):
-        pass
-        # one_class_scheme = self.lYtr()[self.langs()[0]]
-        # multilabel = len(one_class_scheme.shape)>1
-        # if multilabel:
-        #     nC = one_class_scheme.shape[1]
-        # else:
-        #     nC = len(np.unique(one_class_scheme))
-        # accum_tr = np.zeros(nC, dtype=np.int)
-        # accum_te = np.zeros(nC, dtype=np.int)
-        # for (lang, ((Xtr, Ytr, IDtr), (Xte, Yte, IDte))) in self.multiling_dataset.items():
-        #     prev_train = np.sum(Ytr, axis=0)
-        #     prev_test = np.sum(Yte, axis=0)
-        #     accum_tr += prev_train
-        #     accum_te += prev_test
-        #     print(lang+'-train', prev_train)
-        #     print(lang+'-test', prev_test)
-        # print('all-train', accum_tr)
-        # print('all-test', accum_te)
+        #pass
+        nC = self.num_categories()
+        accum_tr = np.zeros(nC, dtype=np.int)
+        accum_te = np.zeros(nC, dtype=np.int)
+        for (lang, ((Xtr, Ytr, IDtr), (Xte, Yte, IDte))) in self.multiling_dataset.items():
+            if lang not in self.langs(): continue
+            prev_train = np.sum(self.cat_view(Ytr), axis=0)
+            prev_test = np.sum(self.cat_view(Yte), axis=0)
+            accum_tr += prev_train
+            accum_te += prev_test
+            print(lang+'-train', prev_train)
+            print(lang+'-test', prev_test)
+        print('all-train', accum_tr)
+        print('all-test', accum_te)
 
 def apply_single_label_fragment_selection(train_doclist, test_doclist):
     train_doclist = single_label_fragment(train_doclist)
@@ -126,9 +146,9 @@ def build_independent_matrices(dataset_name, langs, training_docs, test_docs, la
     :return:
     """
 
-    if not singlelabel:
-        mlb = MultiLabelBinarizer()
-        mlb.fit([label_names])
+    # if not singlelabel:
+    mlb = MultiLabelBinarizer()
+    mlb.fit([label_names])
 
     lW = {}
 
@@ -140,7 +160,6 @@ def build_independent_matrices(dataset_name, langs, training_docs, test_docs, la
 
         tr_data, tr_labels, IDtr = zip(*training_docs[lang])
         te_data, te_labels, IDte = zip(*test_docs[lang])
-
 
 
         if preprocess:
@@ -155,13 +174,13 @@ def build_independent_matrices(dataset_name, langs, training_docs, test_docs, la
         if wiki_docs:
             lW[lang] = tfidf.transform(wiki_docs[lang])
 
-        if singlelabel:
-            Ytr = np.array(tr_labels).flatten()
-            Yte = np.array(te_labels).flatten()
-            assert len(Ytr) == Xtr.shape[0] and len(Yte) == Xte.shape[0], 'wrong size encountered in single-label fragment'
-        else:
-            Ytr = mlb.transform(tr_labels)
-            Yte = mlb.transform(te_labels)
+        # if singlelabel:
+        #     Ytr = np.array(tr_labels).flatten()
+        #     Yte = np.array(te_labels).flatten()
+        #     assert len(Ytr) == Xtr.shape[0] and len(Yte) == Xte.shape[0], 'wrong size encountered in single-label fragment'
+        # else:
+        Ytr = mlb.transform(tr_labels)
+        Yte = mlb.transform(te_labels)
 
         multiling_dataset.add(lang, Xtr, Ytr, Xte, Yte, IDtr, IDte)
 
@@ -179,9 +198,9 @@ def build_juxtaposed_matrices(dataset_name, langs, training_docs, test_docs, lab
     multiling_dataset = MultilingualDataset()
     multiling_dataset.dataset_name = dataset_name
 
-    if not singlelabel:
-        mlb = MultiLabelBinarizer()
-        mlb.fit([label_names])
+    # if not singlelabel:
+    mlb = MultiLabelBinarizer()
+    mlb.fit([label_names])
 
     tr_data_stack = []
     for lang in langs:
@@ -202,13 +221,13 @@ def build_juxtaposed_matrices(dataset_name, langs, training_docs, test_docs, lab
         (tr_data, tr_labels, tr_ID), (te_data, te_labels, te_ID) = multiling_dataset[lang]
         Xtr = tfidf.transform(tr_data)
         Xte = tfidf.transform(te_data)
-        if singlelabel:
-            Ytr = np.array(tr_labels).flatten()
-            Yte = np.array(te_labels).flatten()
-            assert len(Ytr) == Xtr.shape[0] and len(Yte) == Xte.shape[0], 'wrong size encountered in single-label fragment'
-        else:
-            Ytr = mlb.transform(tr_labels)
-            Yte = mlb.transform(te_labels)
+        # if singlelabel:
+        #     Ytr = np.array(tr_labels).flatten()
+        #     Yte = np.array(te_labels).flatten()
+        #     assert len(Ytr) == Xtr.shape[0] and len(Yte) == Xte.shape[0], 'wrong size encountered in single-label fragment'
+        # else:
+        Ytr = mlb.transform(tr_labels)
+        Yte = mlb.transform(te_labels)
         multiling_dataset.add(lang,Xtr,Ytr,Xte,Yte,tr_ID,te_ID)
 
     multiling_dataset.show_dimensions()
@@ -232,9 +251,6 @@ def prepare_jrc_datasets(jrc_data_home, wiki_data_home, langs, train_years, test
     upper_path = join(jrc_data_home, config_name + '_upper.pickle')
     yuxta_path = join(jrc_data_home, config_name + '_yuxtaposed.pickle')
     wiki_path  = join(jrc_data_home, config_name + '.wiki.pickle')
-    if exists(indep_path) and exists(upper_path) and exists(yuxta_path):
-        print(config_name + " already calculated. Skipping.")
-        return
 
     cat_list = inspect_eurovoc(jrc_data_home, select=cat_policy)
     training_docs, label_names = fetch_jrcacquis(langs=langs, data_path=jrc_data_home, years=train_years, cat_filter=cat_list, cat_threshold=1, parallel=None, most_frequent=most_common_cat)
@@ -254,6 +270,7 @@ def prepare_jrc_datasets(jrc_data_home, wiki_data_home, langs, train_years, test
     training_docs_no_parallel = _group_by_lang(training_docs_no_parallel, langs)
     test_docs = _group_by_lang(test_docs, langs)
     if not exists(indep_path):
+        #wiki_docs = []
         wiki_docs_path = wiki_path.replace('.pickle', '.raw.pickle')
         if not exists(wiki_docs_path):
             wiki_docs = fetch_wikipedia_multilingual(wiki_data_home, langs, min_words=50, deletions=False)
@@ -262,9 +279,15 @@ def prepare_jrc_datasets(jrc_data_home, wiki_data_home, langs, train_years, test
         else:
             wiki_docs = pickle.load(open(wiki_docs_path, 'rb'))
 
-        lang_data, wiki_docs = build_independent_matrices(name, langs, training_docs_no_parallel, test_docs, label_names, wiki_docs, singlelabel=single_fragment)
+
+        if wiki_docs:
+            lang_data, wiki_docs = build_independent_matrices(name, langs, training_docs_no_parallel, test_docs, label_names, wiki_docs, singlelabel=single_fragment)
+            pickle.dump(wiki_docs, open(wiki_path, 'wb'), pickle.HIGHEST_PROTOCOL)
+        else:
+            lang_data = build_independent_matrices(name, langs, training_docs_no_parallel, test_docs, label_names, singlelabel=single_fragment)
+
         lang_data.save(indep_path)
-        pickle.dump(wiki_docs, open(wiki_path, 'wb'), pickle.HIGHEST_PROTOCOL)
+
 
     print('Generating upper-bound (English-only) dataset...')
     if not exists(upper_path):
@@ -279,36 +302,46 @@ def prepare_jrc_datasets(jrc_data_home, wiki_data_home, langs, train_years, test
 
 # generates the "feature-independent" and the "yuxtaposed" datasets
 def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home, langs,
-                         train_for_lang=1000, test_for_lang=1000, max_wiki=5000, preprocess=True, single_fragment=False):
+                         train_for_lang=1000, test_for_lang=1000, max_wiki=5000, preprocess=True, single_fragment_for=None):
 
     assert 'en' in langs, 'English is not in requested languages, but is needed for some datasets'
     assert len(langs)>1, 'the multilingual dataset cannot be built with only one dataset'
     assert not preprocess or set(langs).issubset(set(RCV2_LANGS_WITH_NLTK_STEMMING+['en'])), \
         "languages not in RCV1-v2/RCV2 scope or not in valid for NLTK's processing"
 
-    name = 'RCV1/2'+('-singlelabel' if single_fragment else '')
+    name = 'RCV1/2'+('-singlelabel' if single_fragment_for else '')
     config_name = 'rcv1-2_nltk_trByLang'+str(train_for_lang)+'_teByLang'+str(test_for_lang)+\
-                  ('_processed' if preprocess else '_raw')+('singlefragment' if single_fragment else '')
+                  ('_processed' if preprocess else '_raw')+('singlefragment' if single_fragment_for else '')
     indep_path = join(outpath, config_name + '.pickle')
     upper_path = join(outpath, config_name + '_upper.pickle')
     yuxta_path = join(outpath, config_name + '_yuxtaposed.pickle')
     wiki_path = join(outpath, config_name + '.wiki.pickle')
-    if exists(indep_path) and exists(upper_path) and exists(yuxta_path):
-        print(config_name + " already calculated. Skipping.")
-        return
+
+
+
+
+    # if exists(indep_path) and exists(upper_path) and exists(yuxta_path):
+    #     print(config_name + " already calculated. Skipping.")
+    #     return
+
+
+
 
     print('fetching the datasets')
-    #rcv1_train_documents, label_names = fetch_RCV1(rcv1_data_home, split='train')
-    #rcv1_test_documents, _ = fetch_RCV1(rcv1_data_home, split='test')
-    rcv1_documents, label_names = fetch_RCV1(rcv1_data_home, split='all')
-    if langs!=['en']:
-        rcv2_documents, labels_rcv2 = fetch_RCV2(rcv2_data_home, [l for l in langs if l!='en'])
-        filter_by_categories(rcv2_documents, label_names)
 
-    if single_fragment:
+    rcv1_documents, labels_rcv1 = fetch_RCV1(rcv1_data_home, split='train')
+    rcv2_documents, labels_rcv2 = fetch_RCV2(rcv2_data_home, [l for l in langs if l!='en'])
+    filter_by_categories(rcv1_documents, labels_rcv2)
+    filter_by_categories(rcv2_documents, labels_rcv1)
+
+    if single_fragment_for:
+        filter_by_categories(rcv1_documents, single_fragment_for)
+        filter_by_categories(rcv2_documents, single_fragment_for)
         rcv1_documents = single_label_fragment(rcv1_documents)
         rcv2_documents = single_label_fragment(rcv2_documents)
-        label_names = get_active_labels(rcv1_documents+rcv2_documents)
+
+    label_names = get_active_labels(rcv1_documents+rcv2_documents)
+    print('Active labels in RCV1/2 {}'.format(len(label_names)))
 
     print('rcv1: {} train, {} test, {} categories'.format(len(rcv1_documents), 0, len(label_names)))
     print('rcv2: {} documents'.format(len(rcv2_documents)), Counter([doc.lang for doc in rcv2_documents]))
@@ -321,8 +354,7 @@ def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home
     train, test = train_test_split(lang_docs['en'], train_size=train_for_lang*len(langs), test_size=test_for_lang, shuffle=True)
     train_lang_doc_map = {'en':[(d.text, d.categories, d.id) for d in train]}
     test_lang_doc_map = {'en':[(d.text, d.categories, d.id) for d in test]}
-    if not exists(upper_path):
-        build_independent_matrices(name, ['en'], train_lang_doc_map, test_lang_doc_map, label_names, singlelabel=single_fragment).save(upper_path)
+    build_independent_matrices(name, ['en'], train_lang_doc_map, test_lang_doc_map, label_names, singlelabel=single_fragment_for).save(upper_path)
 
     train_lang_doc_map['en'] = train_lang_doc_map['en'][:train_for_lang]
     for lang in langs:
@@ -332,24 +364,37 @@ def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home
         train_lang_doc_map[lang] = [(d.text, d.categories, d.id) for d in train]
         test_lang_doc_map[lang]  = [(d.text, d.categories, d.id) for d in test]
 
-    print('Generating feature-independent dataset...')
-    if not exists(indep_path):
-        wiki_docs_path = wiki_path.replace('.pickle','.raw.pickle')
-        if not exists(wiki_docs_path):
-            wiki_docs = fetch_wikipedia_multilingual(wiki_data_home, langs, min_words=50, deletions=False)
-            wiki_docs = random_wiki_sample(wiki_docs, max_wiki)
-            pickle.dump(wiki_docs, open(wiki_docs_path, 'wb'), pickle.HIGHEST_PROTOCOL)
-        else:
-            wiki_docs = pickle.load(open(wiki_docs_path, 'rb'))
+    # for lang in train_lang_doc_map:
+    #     catcount = Counter()
+    #     for _,cats,_ in train_lang_doc_map[lang]:
+    #         catcount.update(cats)
+    #     print(lang, len(catcount))
+    #     for cat,count in catcount.most_common():
+    #         print(cat+'\t'+str(count))
 
-        #wiki_docs = random_wiki_sample(wiki_docs, 50)
-        lang_data, wiki_docs_matrix = build_independent_matrices(name, langs, train_lang_doc_map, test_lang_doc_map, label_names, wiki_docs, preprocess, singlelabel=single_fragment)
-        lang_data.save(indep_path)
+    print('Generating feature-independent dataset...')
+    wiki_docs_path = wiki_path.replace('.pickle','.raw.pickle')
+    #wiki_docs=[]
+    #wiki_docs_matrix=None
+    if not exists(wiki_docs_path):
+        wiki_docs = fetch_wikipedia_multilingual(wiki_data_home, langs, min_words=50, deletions=False)
+        wiki_docs = random_wiki_sample(wiki_docs, max_wiki)
+        pickle.dump(wiki_docs, open(wiki_docs_path, 'wb'), pickle.HIGHEST_PROTOCOL)
+    else:
+        wiki_docs = pickle.load(open(wiki_docs_path, 'rb'))
+
+    #wiki_docs = random_wiki_sample(wiki_docs, 50)
+    if wiki_docs:
+        lang_data, wiki_docs_matrix = build_independent_matrices(name, langs, train_lang_doc_map, test_lang_doc_map, label_names, wiki_docs, preprocess, singlelabel=single_fragment_for)
+    else:
+        lang_data = build_independent_matrices(name, langs, train_lang_doc_map, test_lang_doc_map, label_names, wiki_docs, preprocess, singlelabel=single_fragment_for)
+
+    lang_data.save(indep_path)
+    if wiki_docs:
         pickle.dump(wiki_docs_matrix, open(wiki_path, 'wb'), pickle.HIGHEST_PROTOCOL)
 
     print('Generating yuxtaposed dataset...')
-    if not exists(yuxta_path):
-        build_juxtaposed_matrices(name, langs, train_lang_doc_map, test_lang_doc_map, label_names, preprocess, singlelabel=single_fragment).save(yuxta_path)
+    build_juxtaposed_matrices(name, langs, train_lang_doc_map, test_lang_doc_map, label_names, preprocess, singlelabel=single_fragment_for).save(yuxta_path)
 
 def prepare_reuters21578(data_path=None, preprocess=True):
 
@@ -401,8 +446,8 @@ if __name__=='__main__':
     WIKI_DATAPATH = "/media/moreo/1TB Volume/Datasets/Wikipedia/multilingual_docs_JRC_NLTK"
     langs = lang_set['JRC_NLTK']
     prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006],
-                         cat_policy='all', most_common_cat=100, single_fragment=True)
-    #prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1986, 2006)), test_years=[2006], cat_policy='all', most_common_cat=300)
+                         cat_policy='leaves', most_common_cat=300, single_fragment=True)
+    prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006], cat_policy='all', most_common_cat=300)
     # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1986, 2006)), test_years=[2006], cat_policy='broadest')
     # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1986, 2006)), test_years=[2006], cat_policy='all')
 
@@ -411,15 +456,16 @@ if __name__=='__main__':
 
     RCV1_PATH = '/media/moreo/1TB Volume/Datasets/RCV1-v2/unprocessed_corpus'
     RCV2_PATH = '/media/moreo/1TB Volume/Datasets/RCV2'
-    # prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, ['en','es'],
-    #                      train_for_lang=10,
-    #                      test_for_lang=10,
-    #                      max_wiki=10)
-    # prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
-    #                      train_for_lang=1000,
-    #                      test_for_lang=1000,
-    #                      max_wiki=5000,
-    #                      singlelabel_fragment=True)
+    rcv1_leave_topics = fetch_topic_hierarchy("/media/moreo/1TB Volume/Datasets/RCV1-v2/rcv1.topics.hier.orig", topics='leaves')
+    prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
+                         train_for_lang=1000,
+                         test_for_lang=1000,
+                         max_wiki=5000,
+                         single_fragment_for=rcv1_leave_topics)
+    prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
+                         train_for_lang=1000,
+                         test_for_lang=1000,
+                         max_wiki=5000)
 
     #print('Building Reuters-21578 dataset...')
     #prepare_reuters21578(preprocess=False)

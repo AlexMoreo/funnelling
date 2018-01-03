@@ -270,10 +270,17 @@ def inspect_eurovoc(data_path, eurovoc_skos_core_concepts_filename='eurovoc_in_s
         broadest_concepts = [c.toPython().split('/')[-1] for c in (all_concepts - narrower_concepts)]
         broadest_concepts.sort()
         selected_concepts = broadest_concepts
+    elif select=="leaves":
+        print("Selecting leaves concepts (those not linked as broader of any other concept)")
+        all_concepts = set(g.subjects(RDF.type, SKOS.Concept))
+        broad_concepts = set(g.objects(None, SKOS.broader))
+        leave_concepts = [c.toPython().split('/')[-1] for c in (all_concepts - broad_concepts)]
+        leave_concepts.sort()
+        selected_concepts = leave_concepts
     else:
         raise ValueError("Selection policy %s is not currently supported" % select)
 
-    print("%d broad concepts found" % len(selected_concepts))
+    print("%d %s concepts found" % (len(selected_concepts), leave_concepts))
     print("Pickling concept list for faster further requests in %s" % fullpath_pickle)
     pickle.dump(selected_concepts, open(fullpath_pickle, 'wb'), pickle.HIGHEST_PROTOCOL)
 
@@ -291,11 +298,12 @@ if __name__ == '__main__':
 
     train_years = list(range(1986, 2006))
     test_years = [2006]
-    cat_policy = 'all'
+    cat_policy = 'leaves'
     most_common_cat = 300
     JRC_DATAPATH = "/media/moreo/1TB Volume/Datasets/JRC_Acquis_v3"
     langs = lang_set['JRC_NLTK']
     cat_list = inspect_eurovoc(JRC_DATAPATH, select=cat_policy)
+    sys.exit()
 
     training_docs, label_names = fetch_jrcacquis(langs=langs, data_path=JRC_DATAPATH, years=train_years,cat_filter=cat_list, cat_threshold=1, parallel=None,most_frequent=most_common_cat)
     test_docs, label_namestest = fetch_jrcacquis(langs=langs, data_path=JRC_DATAPATH, years=test_years, cat_filter=label_names,parallel='force')

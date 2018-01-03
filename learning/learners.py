@@ -24,7 +24,7 @@ class ClassEmbeddingPolylingualClassifier:
     decision score phi_l(d,ci) of an auxiliar classifier phi_l trained on category ci for documents in language l;
     then trains one single classifier for all documents in this space, irrespective of their originary language
     """
-    def __init__(self, auxiliar_learner, final_learner, parameters=None, z_parameters=None, folded_projections=1, n_jobs=-1, gridsearch_scorer=None):
+    def __init__(self, auxiliar_learner, final_learner, parameters=None, z_parameters=None, folded_projections=1, n_jobs=-1):
         """
         :param parameters: parameters for the learner in the doc_projector
         :param z_parameters: parameters for the learner in the z-space
@@ -38,10 +38,10 @@ class ClassEmbeddingPolylingualClassifier:
         self.final_learner = final_learner
         self.parameters=parameters
         self.z_parameters = z_parameters
-        self.doc_projector = NaivePolylingualClassifier(self.auxiliar_learner, self.parameters, n_jobs=n_jobs, gridsearch_scorer=gridsearch_scorer)
+        self.doc_projector = NaivePolylingualClassifier(self.auxiliar_learner, self.parameters, n_jobs=n_jobs)
+        self.doc_projector_bu = NaivePolylingualClassifier(self.auxiliar_learner, self.parameters, n_jobs=n_jobs)
         self.folded_projections = folded_projections
         self.n_jobs = n_jobs
-        self.scorer=gridsearch_scorer
 
     def _get_zspace(self, lXtr, lYtr, lXproj=None, lYproj=None):
         """
@@ -53,8 +53,11 @@ class ClassEmbeddingPolylingualClassifier:
         :return: the projection of lXproj documents into the Z-space defined by the confidence scores of language-specific
         models trained on lXtr, and the lYproj labels stacked consistently
         """
+
+        repair_empty_folds = True
         if lXproj is None and lYproj is None:
             lXproj, lYproj = lXtr, lYtr
+            repair_empty_folds = False
 
         print('fitting the projectors...')
         self.doc_projector.fit(lXtr, lYtr)
@@ -62,6 +65,14 @@ class ClassEmbeddingPolylingualClassifier:
         print('projecting the documents')
         langs = list(lXtr.keys())
         lZ = self.doc_projector.predict_proba(lXproj)
+
+        if repair_empty_folds:
+            empty_categories = self.doc_projector.empty_categories
+            lZ_bu = self.doc_projector_bu.predict_proba(lXproj)
+            for lang in langs:
+                repair = empty_categories[lang]
+                lZ[lang][:,repair] = lZ_bu[lang][:,repair]
+
         Z = np.vstack([lZ[lang] for lang in langs])  # Z is the language independent space
         zy = np.vstack([lYproj[lang] for lang in langs])
 
@@ -73,6 +84,8 @@ class ClassEmbeddingPolylingualClassifier:
         if self.folded_projections == 1:
             Z, zy = self._get_zspace(lX, ly)
         else:
+            self.doc_projector_bu.fit(lX, ly)
+
             print('split of {} folds'.format(self.folded_projections))
             skf = KFold(n_splits=self.folded_projections, shuffle=True)
 
@@ -95,10 +108,11 @@ class ClassEmbeddingPolylingualClassifier:
             Z = np.vstack(Z)
             zy = np.vstack(zy)
             # refit the document projector with all examples to have a more reliable projector for test data
-            self.doc_projector.fit(lX, ly)
+            self.doc_projector = self.doc_projector_bu
+
 
         print('fitting the Z-space of shape={}'.format(Z.shape))
-        self.model = MonolingualClassifier(base_learner=self.final_learner, parameters=self.z_parameters, n_jobs=self.n_jobs, gridsearch_scorer=self.scorer)
+        self.model = MonolingualClassifier(base_learner=self.final_learner, parameters=self.z_parameters, n_jobs=self.n_jobs)
         self.model.fit(Z,zy)
         self.time = time.time() - tinit
         return self
@@ -117,12 +131,11 @@ class NaivePolylingualClassifier:
     """
     Is a mere set of independet MonolingualClassifiers
     """
-    def __init__(self, base_learner, parameters=None, n_jobs=-1, gridsearch_scorer=None):
+    def __init__(self, base_learner, parameters=None, n_jobs=-1):
         self.base_learner = base_learner
         self.parameters = parameters
         self.model = None
         self.n_jobs = n_jobs
-        self.scorer = gridsearch_scorer
 
     def fit(self, lX, ly):
         """
@@ -134,10 +147,12 @@ class NaivePolylingualClassifier:
         tinit = time.time()
         assert set(lX.keys()) == set(ly.keys()), 'inconsistent language mappings in fit'
         langs = list(lX.keys())
+        for lang in langs: _sort_if_sparse(lX[lang])
         models = Parallel(n_jobs=self.n_jobs)\
-            (delayed(MonolingualClassifier(self.base_learner, parameters=self.parameters, gridsearch_scorer=self.scorer).fit)
+            (delayed(MonolingualClassifier(self.base_learner, parameters=self.parameters).fit)
              (lX[lang],ly[lang]) for lang in langs)
         self.model = {lang: models[i] for i, lang in enumerate(langs)}
+        self.empty_categories = {lang:self.model[lang].empty_categories for lang in langs}
         self.time = time.time() - tinit
         return self
 
@@ -267,7 +282,9 @@ class LRIPolylingualClassifier:
         :param reduction: the ratio of reduction of the dimensionality
         :param reweight: indicates whether to reweight the ri-matrix using tfidf
         """
-        assert 0 <= reduction < 1, 'reduction ratio should be in range [0,1)'
+        assert (isinstance(reduction, float) and 0 <= reduction < 1)\
+            or (isinstance(reduction, int) and reduction > 0), \
+            'reduction ratio should be in range [0,1) or positive integer'
         self.base_learner = base_learner
         self.parameters = parameters
         self.model = None
@@ -292,7 +309,10 @@ class LRIPolylingualClassifier:
         nF = Xtr.shape[1]
 
         print('random projection with LRI')
-        dimensions = int(nF * (1.-self.reduction))
+        if isinstance(self.reduction, float):
+            dimensions = int(nF * (1.-self.reduction))
+        else:
+            dimensions = self.reduction
         self.BoC = RandomIndexingBoC(latent_dimensions=dimensions, non_zeros=2) # extremely sparse
         Xtr = self.BoC.fit_transform(Xtr)
 
@@ -356,16 +376,16 @@ class JuxtaposedPolylingualClassifier:
 
 class MonolingualClassifier:
 
-    def __init__(self, base_learner, parameters=None, n_jobs=-1, gridsearch_scorer=None):
+    def __init__(self, base_learner, parameters=None, n_jobs=-1):
         self.learner = base_learner
         self.parameters = parameters
         self.model = None
         self.n_jobs = n_jobs
-        self.scorer=gridsearch_scorer
 
     def fit(self, X, y):
         tinit = time.time()
         _sort_if_sparse(X)
+        self.empty_categories=np.argwhere(np.sum(y, axis=0)==0).flatten()
 
         # multi-class multi-label?
         if len(y.shape) == 2:
@@ -381,7 +401,7 @@ class MonolingualClassifier:
         if self.parameters:
             print('debug: optimizing parameters:', self.parameters)
             self.model = GridSearchCV(self.model, param_grid=self.parameters, refit=True, cv=5, n_jobs=self.n_jobs,
-                                      scoring=self.scorer, error_score=0)
+                                      error_score=0)
 
         print('fitting:',self.model)
         self.model.fit(X,y)
@@ -400,6 +420,7 @@ class MonolingualClassifier:
         assert hasattr(self.model, 'predict_proba'), 'the probability predictions are not enabled in this model'
         _sort_if_sparse(X)
         return self.model.predict_proba(X)
+
 
     def predict(self, X):
         assert self.model is not None, 'predict called before fit'
