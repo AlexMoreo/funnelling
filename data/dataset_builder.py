@@ -241,15 +241,16 @@ def __years_to_str(years):
     return str(years)
 
 #generates the "feature-independent" and the "yuxtaposed" datasets
-def prepare_jrc_datasets(jrc_data_home, wiki_data_home, langs, train_years, test_years, cat_policy, most_common_cat=-1, max_wiki=5000, single_fragment=False):
+def prepare_jrc_datasets(jrc_data_home, wiki_data_home, langs, train_years, test_years, cat_policy, most_common_cat=-1, max_wiki=5000, single_fragment=False, run=0):
     name = 'JRCacquis'+('-singlelabel' if single_fragment else '')
 
     config_name = 'jrc_nltk_' + __years_to_str(train_years) + 'vs' + __years_to_str(test_years) + \
                   '_' + cat_policy + ('_top' + str(most_common_cat) if most_common_cat!=-1 else '')+ '_noparallel_processed' +\
                   ('_singlefragment' if single_fragment else '')
-    indep_path = join(jrc_data_home, config_name + '.pickle')
-    upper_path = join(jrc_data_home, config_name + '_upper.pickle')
-    yuxta_path = join(jrc_data_home, config_name + '_yuxtaposed.pickle')
+    run = ('_run'+str(run) if run > 0 else "")
+    indep_path = join(jrc_data_home, config_name + run + '.pickle')
+    upper_path = join(jrc_data_home, config_name + run + '_upper.pickle')
+    yuxta_path = join(jrc_data_home, config_name + run + '_yuxtaposed.pickle')
     wiki_path  = join(jrc_data_home, config_name + '.wiki.pickle')
 
     cat_list = inspect_eurovoc(jrc_data_home, select=cat_policy)
@@ -302,7 +303,8 @@ def prepare_jrc_datasets(jrc_data_home, wiki_data_home, langs, train_years, test
 
 # generates the "feature-independent" and the "yuxtaposed" datasets
 def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home, langs,
-                         train_for_lang=1000, test_for_lang=1000, max_wiki=5000, preprocess=True, single_fragment_for=None):
+                         train_for_lang=1000, test_for_lang=1000, max_wiki=5000, preprocess=True,
+                         single_fragment_for=None, run=0):
 
     assert 'en' in langs, 'English is not in requested languages, but is needed for some datasets'
     assert len(langs)>1, 'the multilingual dataset cannot be built with only one dataset'
@@ -312,23 +314,13 @@ def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home
     name = 'RCV1/2'+('-singlelabel' if single_fragment_for else '')
     config_name = 'rcv1-2_nltk_trByLang'+str(train_for_lang)+'_teByLang'+str(test_for_lang)+\
                   ('_processed' if preprocess else '_raw')+('singlefragment' if single_fragment_for else '')
-    indep_path = join(outpath, config_name + '.pickle')
-    upper_path = join(outpath, config_name + '_upper.pickle')
-    yuxta_path = join(outpath, config_name + '_yuxtaposed.pickle')
+    run = ('_run' + str(run) if run > 0 else "")
+    indep_path = join(outpath, config_name + run + '.pickle')
+    upper_path = join(outpath, config_name + run +'_upper.pickle')
+    yuxta_path = join(outpath, config_name + run +'_yuxtaposed.pickle')
     wiki_path = join(outpath, config_name + '.wiki.pickle')
 
-
-
-
-    # if exists(indep_path) and exists(upper_path) and exists(yuxta_path):
-    #     print(config_name + " already calculated. Skipping.")
-    #     return
-
-
-
-
     print('fetching the datasets')
-
     rcv1_documents, labels_rcv1 = fetch_RCV1(rcv1_data_home, split='train')
     rcv2_documents, labels_rcv2 = fetch_RCV2(rcv2_data_home, [l for l in langs if l!='en'])
     filter_by_categories(rcv1_documents, labels_rcv2)
@@ -358,7 +350,7 @@ def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home
 
     train_lang_doc_map['en'] = train_lang_doc_map['en'][:train_for_lang]
     for lang in langs:
-        if lang=='en': continue #already split
+        if lang=='en': continue # already split
         test_take = min(test_for_lang, len(lang_docs[lang])-train_for_lang)
         train, test = train_test_split(lang_docs[lang], train_size=train_for_lang, test_size=test_take, shuffle=True)
         train_lang_doc_map[lang] = [(d.text, d.categories, d.id) for d in train]
@@ -440,32 +432,31 @@ def prepare_reuters21578(data_path=None, preprocess=True):
 #-----------------------------------------------------------------------------------------------------------------------
 if __name__=='__main__':
 
-    print('Building JRC-Acquis datasets...')
+    for run in range(1,10):
+        print('Building JRC-Acquis datasets...')
+        JRC_DATAPATH = "/media/moreo/1TB Volume/Datasets/JRC_Acquis_v3"
+        WIKI_DATAPATH = "/media/moreo/1TB Volume/Datasets/Wikipedia/multilingual_docs_JRC_NLTK"
+        langs = lang_set['JRC_NLTK']
+        prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006],
+                             cat_policy='leaves', most_common_cat=300, single_fragment=True, run=run)
+        prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006], cat_policy='all', most_common_cat=300, run=run)
+        # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1986, 2006)), test_years=[2006], cat_policy='broadest')
+        # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1986, 2006)), test_years=[2006], cat_policy='all')
 
-    JRC_DATAPATH = "/media/moreo/1TB Volume/Datasets/JRC_Acquis_v3"
-    WIKI_DATAPATH = "/media/moreo/1TB Volume/Datasets/Wikipedia/multilingual_docs_JRC_NLTK"
-    langs = lang_set['JRC_NLTK']
-    prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006],
-                         cat_policy='leaves', most_common_cat=300, single_fragment=True)
-    prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006], cat_policy='all', most_common_cat=300)
-    # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1986, 2006)), test_years=[2006], cat_policy='broadest')
-    # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1986, 2006)), test_years=[2006], cat_policy='all')
 
-
-    print('Building RCV1-v2/2 datasets...')
-
-    RCV1_PATH = '/media/moreo/1TB Volume/Datasets/RCV1-v2/unprocessed_corpus'
-    RCV2_PATH = '/media/moreo/1TB Volume/Datasets/RCV2'
-    rcv1_leave_topics = fetch_topic_hierarchy("/media/moreo/1TB Volume/Datasets/RCV1-v2/rcv1.topics.hier.orig", topics='leaves')
-    prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
-                         train_for_lang=1000,
-                         test_for_lang=1000,
-                         max_wiki=5000,
-                         single_fragment_for=rcv1_leave_topics)
-    prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
-                         train_for_lang=1000,
-                         test_for_lang=1000,
-                         max_wiki=5000)
+        print('Building RCV1-v2/2 datasets...')
+        RCV1_PATH = '/media/moreo/1TB Volume/Datasets/RCV1-v2/unprocessed_corpus'
+        RCV2_PATH = '/media/moreo/1TB Volume/Datasets/RCV2'
+        rcv1_leave_topics = fetch_topic_hierarchy("/media/moreo/1TB Volume/Datasets/RCV1-v2/rcv1.topics.hier.orig", topics='leaves')
+        prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
+                             train_for_lang=1000,
+                             test_for_lang=1000,
+                             max_wiki=5000,
+                             single_fragment_for=rcv1_leave_topics, run=run)
+        prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
+                             train_for_lang=1000,
+                             test_for_lang=1000,
+                             max_wiki=5000, run=run)
 
     #print('Building Reuters-21578 dataset...')
     #prepare_reuters21578(preprocess=False)
