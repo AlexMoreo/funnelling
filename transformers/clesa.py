@@ -3,7 +3,7 @@ import sklearn
 import numpy as np
 from scipy import stats
 from scipy.spatial.distance import cdist
-from scipy.linalg import cholesky
+from sklearn.externals.joblib import Parallel, delayed
 
 class ESA(object):
 
@@ -66,22 +66,22 @@ class ESA(object):
 
 class CLESA(ESA):
 
-    def __init__(self, similarity='dot', centered=False, post=False):
+    def __init__(self, similarity='dot', centered=False, post=False, n_jobs=-1):
         super(CLESA, self).__init__(similarity, centered, post)
         self.lESA = None
         self.langs = None
+        self.n_jobs = n_jobs
 
     def fit(self, lW):
         """
         :param lW: a dictionary of {language: doc-by-term wiki matrix}
         :return: self
         """
-        assert len(np.unique([W.shape[0] for W in lW.values()])) == 1, "inconsistent dimensions accross languages"
+        assert len(np.unique([W.shape[0] for W in lW.values()])) == 1, "inconsistent dimensions across languages"
 
         self.dimensions = list(lW.values())[0].shape[0]
         self.langs = list(lW.keys())
         self.lESA = {lang:ESA(self.similarity, self.centered, self.post_processing).fit(lW[lang]) for lang in self.langs}
-
         return self
 
     def transform(self, lX):
@@ -91,7 +91,9 @@ class CLESA(ESA):
         """
         assert self.lESA is not None, 'transform method called before fit'
         assert set(lX.keys()).issubset(set(self.langs)), 'languages in lX are not scope'
-        return {lang:self.lESA[lang].transform(lX[lang]) for lang in lX.keys()}
+        langs = list(lX.keys())
+        trans = Parallel(n_jobs=self.n_jobs)(delayed(self.lESA[lang].transform)(lX[lang]) for lang in langs)
+        return {lang:trans[i] for i,lang in enumerate(langs)}
 
     def fit_transform(self, lW, lX):
         return self.fit(lW).transform(lX)

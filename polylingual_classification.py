@@ -76,7 +76,10 @@ if __name__=='__main__':
 
     assert exists(op.dataset), 'Unable to find file '+str(op.dataset)
     assert op.learner in ['svm', 'lr', 'nb'], 'unexpected learner'
-    assert op.mode in ['class','class-10-r','class-5-r', 'naive','naive-sc', 'juxta', 'lri', 'lri-half','lri-30k', 'dci-lin', 'dci-pmi', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
+    assert op.mode in ['class','class-10-r','class-5-r', 'naive','naive-sc', 'juxta', 'lri', 'lri-half','lri-30k',
+                       'dci-lin', 'dci-pmi',
+                       'clesa1k', 'clesa1kcos', 'clesa5k', 'clesa5kcos',
+                       'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
 
     results = PolylingualClassificationResults(op.output)
 
@@ -143,10 +146,36 @@ if __name__=='__main__':
         assert op.learner != 'nb', 'nb operates only on positive matrices'
         print('Learning Distributional Correspondence Indexing with PMI Poly-lingual Classifier')
         classifier = DCIPolylingualClassifier(base_learner=get_learner(), dcf='pmi', z_parameters=get_params(z_space=True))
-    elif op.mode == 'clesa':
+    elif op.mode == 'clesa1k':
+        lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
+        langs = list(lW.keys())
+        n_wiki = lW[langs[0]].shape[0]
+        n_sel = 1000
+        print("wikipedia dimensions = {}".format(n_wiki))
+        selection = np.random.choice(n_wiki, n_sel, replace=False)
+        lW = {lang:lW[lang][selection] for lang in langs}
+        print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
+        classifier = CLESAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(z_space=True))
+    elif op.mode == 'clesa1kcos':
+        lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
+        langs = list(lW.keys())
+        n_wiki = lW[langs[0]].shape[0]
+        n_sel = 1000
+        print("wikipedia dimensions = {}".format(n_wiki))
+        selection = np.random.choice(n_wiki, n_sel, replace=False)
+        lW = {lang:lW[lang][selection] for lang in langs}
+        print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
+        classifier = CLESAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(z_space=True),
+                                                similarity='cosine')
+    elif op.mode == 'clesa5k':
         lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
         print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
         classifier = CLESAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(z_space=True))
+    elif op.mode == 'clesa5kcos':
+        lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
+        print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
+        classifier = CLESAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(z_space=True),
+                                                similarity='cosine')
     elif op.mode == 'upper':
         assert data.langs()==['en'], 'only English is expected in the upper bound call'
         print('Learning Upper bound as the English-only Classifier')
