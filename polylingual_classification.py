@@ -64,7 +64,7 @@ def get_params(z_space=False):
 
     c_range = [1e4, 1e3, 1e2, 1e1, 1]
     if op.learner == 'svm':
-        params = [{'kernel': ['linear'], 'C': c_range}] if not z_space else [{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4], 'C': c_range}]
+        params = [{'kernel': ['linear'], 'C': c_range}] if not z_space else [{'kernel': ['rbf'], 'C': c_range}]
     elif op.learner == 'nb':
         params = [{'alpha': [1.0, .1, .05, .01, .001, 0.0]}]
     elif op.learner == 'lr':
@@ -76,7 +76,7 @@ if __name__=='__main__':
 
     assert exists(op.dataset), 'Unable to find file '+str(op.dataset)
     assert op.learner in ['svm', 'lr', 'nb'], 'unexpected learner'
-    assert op.mode in ['class','class-10-r','class-5-r', 'naive','naive-sc', 'juxta', 'lri', 'lri-half','lri-30k',
+    assert op.mode in ['class','class-10', 'naive', 'juxta', 'lri', 'lri-50k',
                        'dci-lin', 'dci-pmi', 'clesa' 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
 
     results = PolylingualClassificationResults(op.output)
@@ -106,18 +106,12 @@ if __name__=='__main__':
         classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                          final_learner=get_learner(calibrate=False),
                                                          parameters=get_params(), z_parameters=get_params(z_space=True))
-    elif op.mode == 'class-10-r':
+    elif op.mode == 'class-10':
         print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
         classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                          final_learner=get_learner(calibrate=False),
                                                          parameters=None, z_parameters=get_params(z_space=True),
                                                          folded_projections=10)
-    elif op.mode == 'class-5-r':
-        print('Learning 5-Fold CV Class-Embedding Poly-lingual Classifier')
-        classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
-                                                         final_learner=get_learner(calibrate=False),
-                                                         parameters=None, z_parameters=get_params(z_space=True),
-                                                         folded_projections=5)
     elif op.mode == 'naive':
         print('Learning Naive Poly-lingual Classifier')
         classifier = NaivePolylingualClassifier(base_learner=get_learner(), parameters=get_params())
@@ -128,14 +122,10 @@ if __name__=='__main__':
         assert op.learner != 'nb', 'nb operates only on positive matrices'
         print('Learning Lightweight Random Indexing Poly-lingual Classifier')
         classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params())
-    elif op.mode == 'lri-half':
+    elif op.mode == 'lri-50k':
         assert op.learner != 'nb', 'nb operates only on positive matrices'
         print('Learning Lightweight Random Indexing Poly-lingual Classifier')
-        classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params(), reduction=0.5)
-    elif op.mode == 'lri-30k':
-        assert op.learner != 'nb', 'nb operates only on positive matrices'
-        print('Learning Lightweight Random Indexing Poly-lingual Classifier')
-        classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params(), reduction=30000)
+        classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params(), reduction=50000)
     elif op.mode == 'dci-lin':
         assert op.learner!='nb', 'nb operates only on positive matrices'
         print('Learning Distributional Correspondence Indexing with Linear Poly-lingual Classifier')
