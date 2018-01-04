@@ -49,13 +49,13 @@ parser.add_option("-f", "--force", dest="force", action='store_true',
 #reales es artificial
 #note: really make_scorer(macroF1) seems to be better with the actual loss [tough not significantly]
 
-def get_learner(calibrate=False):
+def get_learner(calibrate=False, defaultC=1):
     if op.learner == 'svm':
-        learner = SVC(kernel='linear', probability=calibrate, cache_size=1000, C=1)
+        learner = SVC(kernel='linear', probability=calibrate, cache_size=1000, C=defaultC)
     elif op.learner == 'nb':
         learner = MultinomialNB()
     elif op.learner == 'lr':
-        learner = LogisticRegression()
+        learner = LogisticRegression(C=defaultC)
     return learner
 
 def get_params(z_space=False):
@@ -77,9 +77,7 @@ if __name__=='__main__':
     assert exists(op.dataset), 'Unable to find file '+str(op.dataset)
     assert op.learner in ['svm', 'lr', 'nb'], 'unexpected learner'
     assert op.mode in ['class','class-10-r','class-5-r', 'naive','naive-sc', 'juxta', 'lri', 'lri-half','lri-30k',
-                       'dci-lin', 'dci-pmi',
-                       'clesa1k', 'clesa1kcos', 'clesa5k', 'clesa5kcos',
-                       'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
+                       'dci-lin', 'dci-pmi', 'clesa' 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
 
     results = PolylingualClassificationResults(op.output)
 
@@ -146,36 +144,10 @@ if __name__=='__main__':
         assert op.learner != 'nb', 'nb operates only on positive matrices'
         print('Learning Distributional Correspondence Indexing with PMI Poly-lingual Classifier')
         classifier = DCIPolylingualClassifier(base_learner=get_learner(), dcf='pmi', z_parameters=get_params(z_space=True))
-    elif op.mode == 'clesa1k':
-        lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
-        langs = list(lW.keys())
-        n_wiki = lW[langs[0]].shape[0]
-        n_sel = 1000
-        print("wikipedia dimensions = {}".format(n_wiki))
-        selection = np.random.choice(n_wiki, n_sel, replace=False)
-        lW = {lang:lW[lang][selection] for lang in langs}
-        print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
-        classifier = CLESAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(z_space=True))
-    elif op.mode == 'clesa1kcos':
-        lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
-        langs = list(lW.keys())
-        n_wiki = lW[langs[0]].shape[0]
-        n_sel = 1000
-        print("wikipedia dimensions = {}".format(n_wiki))
-        selection = np.random.choice(n_wiki, n_sel, replace=False)
-        lW = {lang:lW[lang][selection] for lang in langs}
-        print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
-        classifier = CLESAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(z_space=True),
-                                                similarity='cosine')
-    elif op.mode == 'clesa5k':
+    elif op.mode == 'clesa':
         lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
         print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
-        classifier = CLESAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(z_space=True))
-    elif op.mode == 'clesa5kcos':
-        lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
-        print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
-        classifier = CLESAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(z_space=True),
-                                                similarity='cosine')
+        classifier = CLESAPolylingualClassifier(base_learner=get_learner(defaultC=100), lW=lW, z_parameters=get_params(z_space=True))
     elif op.mode == 'upper':
         assert data.langs()==['en'], 'only English is expected in the upper bound call'
         print('Learning Upper bound as the English-only Classifier')
@@ -197,12 +169,12 @@ if __name__=='__main__':
     l_eval = evaluate(classifier, data.lXte(), data.lYte())
 
     for lang in data.langs():
-        #macrof1, microf1, macrok, microk = l_eval[lang]
-        macrof1, microf1 = l_eval[lang]
+        macrof1, microf1, macrok, microk = l_eval[lang]
+        #macrof1, microf1 = l_eval[lang]
         print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (lang, macrof1, microf1))
         #results.add_row(result_id, op.mode, op.optimc, dataset_name, classifier.time, lang, macrof1, microf1, macrok, microk, notes=op.note)
         notes=op.note # + classifier.best_params
-        results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, op.binary, op.languages, classifier.time, lang, macrof1, microf1, notes=op.note)
+        results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, op.binary, op.languages, classifier.time, lang, macrof1, microf1, macrok, microk, notes=op.note)
 
 
 
