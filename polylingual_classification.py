@@ -62,9 +62,9 @@ def get_params(z_space=False):
     if not op.optimc:
         return None
 
-    c_range = [1e4, 1e3, 1e2, 1e1, 1, 1e-1]
+    c_range = [1e4, 1e3, 1e2, 1e1, 1]
     if op.learner == 'svm':
-        params = [{'C': c_range}] if not z_space else [{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4], 'C': c_range}]
+        params = [{'kernel': ['linear'], 'C': c_range}] if not z_space else [{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4], 'C': c_range}]
     elif op.learner == 'nb':
         params = [{'alpha': [1.0, .1, .05, .01, .001, 0.0]}]
     elif op.learner == 'lr':
