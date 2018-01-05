@@ -99,7 +99,7 @@ if __name__=='__main__':
         languages = ['en'] + [l for l in data.langs() if l != 'en']
         data.set_view(languages=languages[:op.languages])
     data.show_dimensions()
-    data.show_category_prevalences()
+    #data.show_category_prevalences()
 
     if op.mode == 'class':
         print('Learning Class-Embedding Poly-lingual Classifier')
