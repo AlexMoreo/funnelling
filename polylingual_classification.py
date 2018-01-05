@@ -77,7 +77,7 @@ if __name__=='__main__':
     assert exists(op.dataset), 'Unable to find file '+str(op.dataset)
     assert op.learner in ['svm', 'lr', 'nb'], 'unexpected learner'
     assert op.mode in ['class','class-10', 'naive', 'juxta', 'lri', 'lri-50k',
-                       'dci-lin', 'dci-pmi', 'clesa' 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
+                       'dci-lin', 'dci-pmi', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
 
     results = PolylingualClassificationResults(op.output)
 
