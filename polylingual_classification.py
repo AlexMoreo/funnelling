@@ -76,7 +76,7 @@ if __name__=='__main__':
 
     assert exists(op.dataset), 'Unable to find file '+str(op.dataset)
     assert op.learner in ['svm', 'lr', 'nb'], 'unexpected learner'
-    assert op.mode in ['class','class-10', 'naive', 'juxta', 'lri', 'lri-50k',
+    assert op.mode in ['class','class-10', 'naive', 'juxta', 'lri', 'lri-25k',
                        'dci-lin', 'dci-pmi', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
 
     results = PolylingualClassificationResults(op.output)
@@ -122,10 +122,10 @@ if __name__=='__main__':
         assert op.learner != 'nb', 'nb operates only on positive matrices'
         print('Learning Lightweight Random Indexing Poly-lingual Classifier')
         classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params())
-    elif op.mode == 'lri-50k':
+    elif op.mode == 'lri-25k':
         assert op.learner != 'nb', 'nb operates only on positive matrices'
         print('Learning Lightweight Random Indexing Poly-lingual Classifier')
-        classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params(), reduction=50000)
+        classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params(), reduction=25000)
     elif op.mode == 'dci-lin':
         assert op.learner!='nb', 'nb operates only on positive matrices'
         print('Learning Distributional Correspondence Indexing with Linear Poly-lingual Classifier')
