@@ -174,6 +174,32 @@ if __name__=='__main__':
         lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
         print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
         classifier = CLESAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
+    elif op.mode == 'clesa-1':
+        assert not op.optimc, 'optim c is not allowed for method ' + op.mode
+        lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
+        print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
+        classifier = CLESAPolylingualClassifier(base_learner=get_learner(defaultC=1.), lW=lW, z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
+    elif op.mode == 'clesa-10':
+        assert not op.optimc, 'optim c is not allowed for method ' + op.mode
+        lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
+        print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
+        classifier = CLESAPolylingualClassifier(base_learner=get_learner(defaultC=10.), lW=lW, z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
+    elif op.mode == 'clesa-100':
+        assert not op.optimc, 'optim c is not allowed for method ' + op.mode
+        lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
+        print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
+        classifier = CLESAPolylingualClassifier(base_learner=get_learner(defaultC=100.), lW=lW, z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
+    elif op.mode == 'clesa-1000':
+        assert not op.optimc, 'optim c is not allowed for method ' + op.mode
+        lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
+        print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
+        classifier = CLESAPolylingualClassifier(base_learner=get_learner(defaultC=1000.), lW=lW, z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
+    elif op.mode == 'clesa-10000':
+        assert not op.optimc, 'optim c is not allowed for method ' + op.mode
+        lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
+        print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
+        classifier = CLESAPolylingualClassifier(base_learner=get_learner(defaultC=10000.), lW=lW, z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
+
     elif op.mode == 'upper':
         assert data.langs()==['en'], 'only English is expected in the upper bound call'
         print('Learning Upper bound as the English-only Classifier')
