@@ -1,6 +1,6 @@
 from zipfile import ZipFile
 import xml.etree.ElementTree as ET
-from data.languages import RCV2_LANGS_WITH_NLTK_STEMMING
+from data.languages import RCV2_LANGS_WITH_NLTK_STEMMING, RCV2_LANGS
 from util.file import list_files
 from sklearn.datasets import get_data_home
 import gzip
@@ -9,6 +9,7 @@ from util.file import download_file_if_not_exists
 import re
 from collections import Counter
 import numpy as np
+import sys
 
 """
 RCV2's Nomenclature:
@@ -292,22 +293,6 @@ def fetch_topic_hierarchy(path, topics='all'):
 
 
 if __name__=='__main__':
-    import sys
-
-    topics = fetch_topic_hierarchy("/media/moreo/1TB Volume/Datasets/RCV1-v2/rcv1.topics.hier.orig", topics='leaves')
-    print(len(topics))
-    print(topics)
-
-    sys.exit()
-
-    def single_label_fragment(doclist):
-        single = [d for d in doclist if len(d.categories) < 2]
-        categories = [d.categories[0] for d in single if d.categories]
-        final_categories = set(categories)
-        print('{} single-label documents ({} categories) from the original {} documents'.format(len(single),
-                                                                                                len(final_categories),
-                                                                                                len(doclist)))
-        return single, list(final_categories)
 
     RCV1PROC_PATH = '/media/moreo/1TB Volume/Datasets/RCV1-v2/processed_corpus'
     RCV1_PATH = '/media/moreo/1TB Volume/Datasets/RCV1-v2/unprocessed_corpus'
@@ -315,13 +300,16 @@ if __name__=='__main__':
 
     #rcv1_train, labels1 = fetch_RCV1_processed(RCV1PROC_PATH, split='train')
     # rcv1_train, labels1 = fetch_RCV1(RCV1_PATH, split='all')
-    rcv1_train, labels1 = fetch_RCV1(RCV1_PATH, split='train')
+    #rcv1_train, labels1 = fetch_RCV1(RCV1_PATH, split='train')
     # rcv1_test, labels2 = fetch_RCV1(RCV1_PATH, split='test')
     #rcv2_documents, labels2 = fetch_RCV2(RCV2_PATH, RCV2_LANGS_WITH_NLTK_STEMMING)
+    rcv2_documents, labels2 = fetch_RCV2(RCV2_PATH, RCV2_LANGS)
 
-    print('read {} documents in rcv1-train, and {} labels'.format(len(rcv1_train), len(labels1)))
+
+    #print('read {} documents in rcv1-train, and {} labels'.format(len(rcv1_train), len(labels1)))
     # print('read {} documents in rcv1-test, and {} labels'.format(len(rcv1_test), len(labels2)))
-    # print('read {} documents in rcv2, and {} labels'.format(len(rcv2_documents), len(labels2)))
+    print('read {} documents in rcv2, and {} labels'.format(len(rcv2_documents), len(labels2)))
+    sys.exit()
 
     rcv1_train, labels1 = single_label_fragment(rcv1_train)
     #rcv2_documents, labels2 = single_label_fragment(rcv2_documents)

@@ -1,12 +1,14 @@
 import util.disable_sklearn_warnings
-from data.dataset_builder import *
+import os,sys
+from dataset_builder import MultilingualDataset
 from learning.learners import *
 from util.evaluation import *
 from optparse import OptionParser
 from util.results import PolylingualClassificationResults
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import MultinomialNB
-
+from util.file import exists
+import pickle
 
 parser = OptionParser()
 parser.add_option("-d", "--dataset", dest="dataset",
@@ -64,7 +66,8 @@ def get_params(z_space=False):
 
     c_range = [1e4, 1e3, 1e2, 1e1, 1]
     if op.learner == 'svm':
-        params = [{'kernel': ['linear'], 'C': c_range}] if not z_space else [{'kernel': ['rbf'], 'C': c_range}]
+        params = [{'kernel': ['linear'], 'C': c_range}] if not z_space else [{'kernel': ['rbf'], 'C': c_range}] # [{'kernel': ['poly'], 'C': c_range, 'coef0':[0., 1.], 'gamma':['auto', 2.], 'degree':[3,4]}]
+        #, 'gamma' : [0.001, 0.01, 0.1, 1]
     elif op.learner == 'nb':
         params = [{'alpha': [1.0, .1, .05, .01, .001, 0.0]}]
     elif op.learner == 'lr':
@@ -76,8 +79,8 @@ if __name__=='__main__':
 
     assert exists(op.dataset), 'Unable to find file '+str(op.dataset)
     assert op.learner in ['svm', 'lr', 'nb'], 'unexpected learner'
-    assert op.mode in ['class','class-10', 'naive', 'juxta', 'lri', 'lri-25k',
-                       'dci-lin', 'dci-pmi', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
+    # assert op.mode in ['class','class-lang','class-10', 'class-10-nocal', 'naive', 'juxta', 'lri', 'lri-25k',
+    #                    'dci-lin', 'dci-pmi', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
 
     results = PolylingualClassificationResults(op.output)
 
@@ -105,10 +108,35 @@ if __name__=='__main__':
         print('Learning Class-Embedding Poly-lingual Classifier')
         classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                          final_learner=get_learner(calibrate=False),
-                                                         parameters=get_params(), z_parameters=get_params(z_space=True))
+                                                         parameters=None, z_parameters=get_params(z_space=True))
+    elif op.mode == 'class-zero':
+        print('Learning Class-Embedding Poly-lingual Classifier')
+        classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
+                                                         final_learner=get_learner(calibrate=False),
+                                                         parameters=None, z_parameters=get_params(z_space=True),
+                                                         center_prob=True)
+    elif op.mode == 'class-rbfgamma':
+        print('Learning Class-Embedding Poly-lingual Classifier')
+        classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
+                                                         final_learner=get_learner(calibrate=False),
+                                                         parameters=None, z_parameters=get_params(z_space=True),
+                                                         folded_projections=1)
+    elif op.mode == 'class-lang':
+        print('Learning Class-Embedding Poly-lingual Classifier')
+        classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
+                                                         final_learner=get_learner(calibrate=False),
+                                                         parameters=None, z_parameters=get_params(z_space=True),
+                                                         folded_projections=1,
+                                                         language_trace=True)
     elif op.mode == 'class-10':
         print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
         classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
+                                                         final_learner=get_learner(calibrate=False),
+                                                         parameters=None, z_parameters=get_params(z_space=True),
+                                                         folded_projections=10)
+    elif op.mode == 'class-10-nocal':
+        print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
+        classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=False),
                                                          final_learner=get_learner(calibrate=False),
                                                          parameters=None, z_parameters=get_params(z_space=True),
                                                          folded_projections=10)
@@ -137,7 +165,7 @@ if __name__=='__main__':
     elif op.mode == 'clesa':
         lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
         print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
-        classifier = CLESAPolylingualClassifier(base_learner=get_learner(defaultC=100), lW=lW, z_parameters=get_params(z_space=True))
+        classifier = CLESAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(z_space=True))
     elif op.mode == 'upper':
         assert data.langs()==['en'], 'only English is expected in the upper bound call'
         print('Learning Upper bound as the English-only Classifier')
@@ -155,8 +183,16 @@ if __name__=='__main__':
                                                               alpha=0.5,
                                                               c_parameters=get_params(), y_parameters=get_params())
 
-    classifier.fit(data.lXtr(), data.lYtr())
-    l_eval = evaluate(classifier, data.lXte(), data.lYte())
+    if op.mode == 'clesa':
+        print('running memory-friendly version of clesa')
+        lZtr = classifier.transform(data.lXtr())
+        lZte = classifier.transform(data.lXte(), accum_time=False)
+        classifier.clear_transformer()
+        classifier.fit_from_transformed(lZtr, data.lYtr())
+        l_eval = evaluate(classifier, lZte, data.lYte(), predictor=classifier.predict_from_transformed)
+    else:
+        classifier.fit(data.lXtr(), data.lYtr())
+        l_eval = evaluate(classifier, data.lXte(), data.lYte())
 
     for lang in data.langs():
         macrof1, microf1, macrok, microk = l_eval[lang]

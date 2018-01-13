@@ -9,7 +9,7 @@ from data.reader.reuters21578_reader import fetch_reuters21579
 from data.reader.wikipedia_tools import fetch_wikipedia_multilingual, random_wiki_sample
 from data.text_preprocessor import NLTKLemmaTokenizer
 import pickle
-from learning.learners import *
+import numpy as np
 from random import shuffle
 from sklearn.model_selection import train_test_split
 
@@ -104,6 +104,9 @@ class MultilingualDataset:
         print('all-train', accum_tr)
         print('all-test', accum_te)
 
+    def set_labels(self, labels):
+        self.labels = labels
+
 def apply_single_label_fragment_selection(train_doclist, test_doclist):
     train_doclist = single_label_fragment(train_doclist)
     test_doclist = single_label_fragment(test_doclist)
@@ -154,13 +157,13 @@ def build_independent_matrices(dataset_name, langs, training_docs, test_docs, la
 
     multiling_dataset = MultilingualDataset()
     multiling_dataset.dataset_name=dataset_name
+    multiling_dataset.set_labels(mlb.classes_)
     for lang in langs:
         print("\nprocessing %d training, %d test, %d wiki for language <%s>" %
               (len(training_docs[lang]), len(test_docs[lang]), len(wiki_docs[lang]) if wiki_docs else 0, lang))
 
         tr_data, tr_labels, IDtr = zip(*training_docs[lang])
         te_data, te_labels, IDte = zip(*test_docs[lang])
-
 
         if preprocess:
             tfidf = TfidfVectorizer(strip_accents='unicode', min_df=3, sublinear_tf=True,
@@ -201,6 +204,8 @@ def build_juxtaposed_matrices(dataset_name, langs, training_docs, test_docs, lab
     # if not singlelabel:
     mlb = MultiLabelBinarizer()
     mlb.fit([label_names])
+
+    multiling_dataset.set_labels(mlb.classes_)
 
     tr_data_stack = []
     for lang in langs:
@@ -247,11 +252,12 @@ def prepare_jrc_datasets(jrc_data_home, wiki_data_home, langs, train_years, test
     config_name = 'jrc_nltk_' + __years_to_str(train_years) + 'vs' + __years_to_str(test_years) + \
                   '_' + cat_policy + ('_top' + str(most_common_cat) if most_common_cat!=-1 else '')+ '_noparallel_processed' +\
                   ('_singlefragment' if single_fragment else '')
-    run = ('_run'+str(run) if run > 0 else "")
+    run = '_run'+str(run)
     indep_path = join(jrc_data_home, config_name + run + '.pickle')
     upper_path = join(jrc_data_home, config_name + run + '_upper.pickle')
     yuxta_path = join(jrc_data_home, config_name + run + '_yuxtaposed.pickle')
-    wiki_path  = join(jrc_data_home, config_name + '.wiki.pickle')
+    wiki_path  = join(jrc_data_home, config_name + run + '.wiki.pickle')
+    wiki_docs_path = join(jrc_data_home, config_name + '.wiki.raw.pickle')
 
     cat_list = inspect_eurovoc(jrc_data_home, select=cat_policy)
     training_docs, label_names = fetch_jrcacquis(langs=langs, data_path=jrc_data_home, years=train_years, cat_filter=cat_list, cat_threshold=1, parallel=None, most_frequent=most_common_cat)
@@ -270,16 +276,16 @@ def prepare_jrc_datasets(jrc_data_home, wiki_data_home, langs, train_years, test
     training_docs = _group_by_lang(training_docs, langs)
     training_docs_no_parallel = _group_by_lang(training_docs_no_parallel, langs)
     test_docs = _group_by_lang(test_docs, langs)
-    if not exists(indep_path):
+    if True or not exists(indep_path):
         #wiki_docs = []
-        wiki_docs_path = wiki_path.replace('.pickle', '.raw.pickle')
+        #wiki_docs_path = wiki_path.replace('.pickle', '.raw.pickle')
         if not exists(wiki_docs_path):
             wiki_docs = fetch_wikipedia_multilingual(wiki_data_home, langs, min_words=50, deletions=False)
             wiki_docs = random_wiki_sample(wiki_docs, max_wiki)
             pickle.dump(wiki_docs, open(wiki_docs_path, 'wb'), pickle.HIGHEST_PROTOCOL)
         else:
             wiki_docs = pickle.load(open(wiki_docs_path, 'rb'))
-
+        wiki_docs = random_wiki_sample(wiki_docs, max_wiki)
 
         if wiki_docs:
             lang_data, wiki_docs = build_independent_matrices(name, langs, training_docs_no_parallel, test_docs, label_names, wiki_docs, singlelabel=single_fragment)
@@ -291,13 +297,13 @@ def prepare_jrc_datasets(jrc_data_home, wiki_data_home, langs, train_years, test
 
 
     print('Generating upper-bound (English-only) dataset...')
-    if not exists(upper_path):
+    if True or not exists(upper_path):
         training_docs_eng_only = {'en':training_docs['en']}
         test_docs_eng_only = {'en':test_docs['en']}
         build_independent_matrices(name, ['en'], training_docs_eng_only, test_docs_eng_only, label_names, singlelabel=single_fragment).save(upper_path)
 
     print('Generating yuxtaposed dataset...')
-    if not exists(yuxta_path):
+    if True or not exists(yuxta_path):
         build_juxtaposed_matrices(name, langs, training_docs_no_parallel, test_docs, label_names, singlelabel=single_fragment).save(yuxta_path)
 
 
@@ -314,11 +320,12 @@ def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home
     name = 'RCV1/2'+('-singlelabel' if single_fragment_for else '')
     config_name = 'rcv1-2_nltk_trByLang'+str(train_for_lang)+'_teByLang'+str(test_for_lang)+\
                   ('_processed' if preprocess else '_raw')+('singlefragment' if single_fragment_for else '')
-    run = ('_run' + str(run) if run > 0 else "")
+    run = '_run' + str(run)
     indep_path = join(outpath, config_name + run + '.pickle')
     upper_path = join(outpath, config_name + run +'_upper.pickle')
     yuxta_path = join(outpath, config_name + run +'_yuxtaposed.pickle')
-    wiki_path = join(outpath, config_name + '.wiki.pickle')
+    wiki_path = join(outpath, config_name + run + '.wiki.pickle')
+    wiki_docs_path = join(outpath, config_name + '.wiki.raw.pickle')
 
     print('fetching the datasets')
     rcv1_documents, labels_rcv1 = fetch_RCV1(rcv1_data_home, split='train')
@@ -365,7 +372,7 @@ def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home
     #         print(cat+'\t'+str(count))
 
     print('Generating feature-independent dataset...')
-    wiki_docs_path = wiki_path.replace('.pickle','.raw.pickle')
+    #wiki_docs_path = wiki_path.replace('.pickle','.raw.pickle')
     #wiki_docs=[]
     #wiki_docs_matrix=None
     if not exists(wiki_docs_path):
@@ -374,6 +381,7 @@ def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home
         pickle.dump(wiki_docs, open(wiki_docs_path, 'wb'), pickle.HIGHEST_PROTOCOL)
     else:
         wiki_docs = pickle.load(open(wiki_docs_path, 'rb'))
+    wiki_docs = random_wiki_sample(wiki_docs, max_wiki)
 
     #wiki_docs = random_wiki_sample(wiki_docs, 50)
     if wiki_docs:
@@ -431,23 +439,32 @@ def prepare_reuters21578(data_path=None, preprocess=True):
 #-----------------------------------------------------------------------------------------------------------------------
 #-----------------------------------------------------------------------------------------------------------------------
 if __name__=='__main__':
+    JRC_DATAPATH = "/media/moreo/1TB Volume/Datasets/JRC_Acquis_v3"
+    WIKI_DATAPATH = "/media/moreo/1TB Volume/Datasets/Wikipedia/multilingual_docs_JRC_NLTK"
+    RCV1_PATH = '/media/moreo/1TB Volume/Datasets/RCV1-v2/unprocessed_corpus'
+    RCV2_PATH = '/media/moreo/1TB Volume/Datasets/RCV2'
+    langs = lang_set['JRC_NLTK']
+    rcv1_leave_topics = fetch_topic_hierarchy("/media/moreo/1TB Volume/Datasets/RCV1-v2/rcv1.topics.hier.orig",
+                                              topics='leaves')
 
-    for run in range(1,10):
+    # prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
+    #                      train_for_lang=1000,
+    #                      test_for_lang=1000,
+    #                      max_wiki=0, run='X')
+    # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006],
+    #                      cat_policy='all', most_common_cat=300, max_wiki=0, run='X')
+    #
+    # sys.exit()
+
+    for run in range(0,10):
         print('Building JRC-Acquis datasets...')
-        JRC_DATAPATH = "/media/moreo/1TB Volume/Datasets/JRC_Acquis_v3"
-        WIKI_DATAPATH = "/media/moreo/1TB Volume/Datasets/Wikipedia/multilingual_docs_JRC_NLTK"
-        langs = lang_set['JRC_NLTK']
         prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006],
                              cat_policy='leaves', most_common_cat=300, single_fragment=True, run=run)
         prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006], cat_policy='all', most_common_cat=300, run=run)
         # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1986, 2006)), test_years=[2006], cat_policy='broadest')
         # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1986, 2006)), test_years=[2006], cat_policy='all')
 
-
         print('Building RCV1-v2/2 datasets...')
-        RCV1_PATH = '/media/moreo/1TB Volume/Datasets/RCV1-v2/unprocessed_corpus'
-        RCV2_PATH = '/media/moreo/1TB Volume/Datasets/RCV2'
-        rcv1_leave_topics = fetch_topic_hierarchy("/media/moreo/1TB Volume/Datasets/RCV1-v2/rcv1.topics.hier.orig", topics='leaves')
         prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
                              train_for_lang=1000,
                              test_for_lang=1000,

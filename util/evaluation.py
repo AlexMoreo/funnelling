@@ -3,11 +3,13 @@ from util.metrics import macroF1,microF1,macroK,microK
 from sklearn.metrics import f1_score
 import numpy as np
 
-def evaluate(polylingual_method, lX, ly):
+def evaluate(polylingual_method, lX, ly, predictor=None):
     print('prediction for test')
     assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in evaluate'
     n_jobs = polylingual_method.n_jobs
-    ly_ = polylingual_method.predict(lX)
+    if predictor is None:
+        predictor = polylingual_method.predict
+    ly_ = predictor(lX)
     print('evaluation (n_jobs={})'.format(n_jobs))
     if n_jobs == 1:
         return {lang: evaluation_metrics(ly[lang], ly_[lang]) for lang in ly.keys()}

@@ -24,7 +24,7 @@ class ClassEmbeddingPolylingualClassifier:
     decision score phi_l(d,ci) of an auxiliar classifier phi_l trained on category ci for documents in language l;
     then trains one single classifier for all documents in this space, irrespective of their originary language
     """
-    def __init__(self, auxiliar_learner, final_learner, parameters=None, z_parameters=None, folded_projections=1, n_jobs=-1):
+    def __init__(self, auxiliar_learner, final_learner, parameters=None, z_parameters=None, folded_projections=1, language_trace=False, norm=False, center_prob=False, n_jobs=-1):
         """
         :param parameters: parameters for the learner in the doc_projector
         :param z_parameters: parameters for the learner in the z-space
@@ -34,6 +34,7 @@ class ClassEmbeddingPolylingualClassifier:
         models trained on the remaining folds. This should increase the generality of the space to unseen data.
         """
         assert folded_projections>0, "positive number of folds expected"
+
         self.auxiliar_learner = auxiliar_learner
         self.final_learner = final_learner
         self.parameters=parameters
@@ -41,6 +42,9 @@ class ClassEmbeddingPolylingualClassifier:
         self.doc_projector = NaivePolylingualClassifier(self.auxiliar_learner, self.parameters, n_jobs=n_jobs)
         self.doc_projector_bu = NaivePolylingualClassifier(self.auxiliar_learner, self.parameters, n_jobs=n_jobs)
         self.folded_projections = folded_projections
+        self.language_trace = language_trace
+        self.norm = norm
+        self.center_prob = center_prob
         self.n_jobs = n_jobs
 
     def _get_zspace(self, lXtr, lYtr, lXproj=None, lYproj=None):
@@ -73,42 +77,68 @@ class ClassEmbeddingPolylingualClassifier:
                 repair = empty_categories[lang]
                 lZ[lang][:,repair] = lZ_bu[lang][:,repair]
 
+        if self.center_prob:
+            lZ = {l: Z * 2. - 1. for l, Z in lZ.items()}
+
+        if self.language_trace:
+            lZ = self._extend_with_lang_trace(lZ)
+
         Z = np.vstack([lZ[lang] for lang in langs])  # Z is the language independent space
         zy = np.vstack([lYproj[lang] for lang in langs])
 
+        if self.norm:
+            ave = np.mean(Z, axis=0)
+            std  = np.clip(np.std(Z, axis=0), a_min=1e-7, a_max=None)
+            Z = (Z-ave)/std
+
         return Z, zy
+
+    def _get_zspace_folds(self, lX, ly):
+        self.doc_projector_bu.fit(lX, ly)
+
+        print('split of {} folds'.format(self.folded_projections))
+        skf = KFold(n_splits=self.folded_projections, shuffle=True)
+
+        Z, zy = [], []
+        lfold = {lang: list(skf.split(lX[lang], ly[lang])) for lang in lX.keys()}
+        for fold in range(self.folded_projections):
+            print('fitting the projectors ({}/{})...'.format(fold + 1, self.folded_projections))
+            lfoldXtr, lfoldYtr = {}, {}
+            lfoldXte, lfoldYte = {}, {}
+            for lang in lX.keys():
+                train, test = lfold[lang][fold]
+                lfoldXtr[lang] = lX[lang][train]
+                lfoldYtr[lang] = ly[lang][train]
+                lfoldXte[lang] = lX[lang][test]
+                lfoldYte[lang] = ly[lang][test]
+            Zfold, zYfold = self._get_zspace(lfoldXtr, lfoldYtr, lfoldXte, lfoldYte)
+            Z.append(Zfold)
+            zy.append(zYfold)
+        # compose the Z-space as the union of all folded predictions
+        Z = np.vstack(Z)
+        zy = np.vstack(zy)
+        # refit the document projector with all examples to have a more reliable projector for test data
+        self.doc_projector = self.doc_projector_bu
+        return Z, zy
+
+    def _extend_with_lang_trace(self, lZ):
+        # add binary information informing of the language of provenience
+        def extend_with_lang_trace(Z, lang):
+            L = np.zeros((Z.shape[0], len(self.langs)), dtype=np.float)
+            L[:, self.langs[lang]] = 0.05
+            return np.hstack([Z, L])
+        return {l: extend_with_lang_trace(Z, l) for l, Z in lZ.items()}
 
     def fit(self, lX, ly):
         tinit = time.time()
 
+        if self.language_trace:
+            self.langs = {lang:dim for dim,lang in enumerate(lX.keys())}
+
         if self.folded_projections == 1:
             Z, zy = self._get_zspace(lX, ly)
         else:
-            self.doc_projector_bu.fit(lX, ly)
-
-            print('split of {} folds'.format(self.folded_projections))
-            skf = KFold(n_splits=self.folded_projections, shuffle=True)
-
-            Z, zy = [], []
-            lfold = {lang:list(skf.split(lX[lang],ly[lang])) for lang in lX.keys()}
-            for fold in range(self.folded_projections):
-                print('fitting the projectors ({}/{})...'.format(fold+1,self.folded_projections))
-                lfoldXtr, lfoldYtr = {}, {}
-                lfoldXte, lfoldYte = {}, {}
-                for lang in lX.keys():
-                    train, test = lfold[lang][fold]
-                    lfoldXtr[lang] = lX[lang][train]
-                    lfoldYtr[lang] = ly[lang][train]
-                    lfoldXte[lang] = lX[lang][test]
-                    lfoldYte[lang] = ly[lang][test]
-                Zfold, zYfold = self._get_zspace(lfoldXtr, lfoldYtr, lfoldXte, lfoldYte)
-                Z.append(Zfold)
-                zy.append(zYfold)
-            # compose the Z-space as the union of all folded predictions
-            Z = np.vstack(Z)
-            zy = np.vstack(zy)
-            # refit the document projector with all examples to have a more reliable projector for test data
-            self.doc_projector = self.doc_projector_bu
+            Z, zy = self._get_zspace_folds(lX, ly)
 
 
         print('fitting the Z-space of shape={}'.format(Z.shape))
@@ -124,6 +154,11 @@ class ClassEmbeddingPolylingualClassifier:
         """
         assert self.model is not None, 'predict called before fit'
         lZ = self.doc_projector.predict_proba(lX)
+        if self.center_prob:
+            lZ = {l: Z * 2. - 1. for l, Z in lZ.items()}
+
+        if self.language_trace:
+            lZ = self._extend_with_lang_trace(lZ)
         return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
 
 
@@ -206,31 +241,52 @@ class CLESAPolylingualClassifier:
         self.z_parameters=z_parameters
         self.doc_projector = CLESA(similarity=similarity, post=post).fit(lW)
         self.n_jobs = n_jobs
+        self.time = 0
 
     def fit(self, lX, ly):
-        tinit = time.time()
         assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in fit'
 
         print('projecting the documents')
-        langs = list(lX.keys())
-        lZ = self.doc_projector.transform(lX)
-        Z = np.vstack([lZ[lang] for lang in langs]) # Z is the language independent space
+        lZ = self.transform(lX)
+        return self.fit_from_transformed(lZ, ly)
+
+    def fit_from_transformed(self, lZ, ly):
+        tinit = time.time()
+        langs = list(lZ.keys())
+        Z = np.vstack([lZ[lang] for lang in langs])  # Z is the language independent space
         zy = np.vstack([ly[lang] for lang in langs])
 
         print('fitting the Z-space of shape={}'.format(Z.shape))
-        self.model = MonolingualClassifier(base_learner=self.base_learner, parameters=self.z_parameters, n_jobs=self.n_jobs)
+        self.model = MonolingualClassifier(base_learner=self.base_learner, parameters=self.z_parameters,
+                                           n_jobs=self.n_jobs)
         self.model.fit(Z, zy)
-        self.time = time.time() - tinit
+        self.time = self.time + (time.time() - tinit)
         return self
+
+    def transform(self, lX, accum_time=True):
+        tinit = time.time()
+        lZ = self.doc_projector.transform(lX)
+        if accum_time:
+            self.time = self.time + (time.time() - tinit)
+        return lZ
+
+    def predict_from_transformed(self, lZ):
+        assert self.model is not None, 'predict called before fit'
+        return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
 
     def predict(self, lX):
         """
         :param lX: a dictionary {language_label: X csr-matrix}
         :return: a dictionary of predictions
         """
-        assert self.model is not None, 'predict called before fit'
-        lZ = self.doc_projector.transform(lX)
-        return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
+        assert self.doc_projector is not None, 'clesa transformed disabled'
+        lZ = self.transform(lX)
+        return self.predict_from_transformed(lZ)
+
+    def clear_transformer(self):
+        print('clearing CLESA projector (freeing memory for all language-matrices) '
+              '[warning: no further transformation will be allowed]')
+        self.doc_projector = None
 
 
 class DCIPolylingualClassifier:

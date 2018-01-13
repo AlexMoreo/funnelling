@@ -1,6 +1,9 @@
 from __future__ import print_function
 import ijson
 import os, sys
+
+from seaborn.external.husl import max_chroma
+
 sys.path.append("/home/moreo/CLESA/cl-esa-p")
 from os.path import join
 from bz2 import BZ2File
@@ -346,6 +349,7 @@ def fetch_wikipedia_multilingual(wiki_multi_path, langs, min_words=100, deletion
     return mling_documents
 
 def random_wiki_sample(l_wiki, max_documents):
+    if max_documents == 0: return None
     langs = list(l_wiki.keys())
     assert len(np.unique([len(l_wiki[l]) for l in langs])) == 1, 'documents across languages do not seem to be aligned'
     ndocs_per_lang = len(l_wiki[langs[0]])
