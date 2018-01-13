@@ -29,6 +29,8 @@ parser.add_option("-L", "--languages", dest="languages",type=int,
                   help="Chooses the maximum number of random languages to consider", default=-1)
 parser.add_option("-f", "--force", dest="force", action='store_true',
                   help="Run even if the result was already computed", default=False)
+parser.add_option("-j", "--n_jobs", dest="n_jobs",type=int,
+                  help="Number of parallel jobs (default is -1, all)", default=-1)
 
 
 
@@ -108,91 +110,89 @@ if __name__=='__main__':
         print('Learning Class-Embedding Poly-lingual Classifier')
         classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                          final_learner=get_learner(calibrate=False),
-                                                         parameters=None, z_parameters=get_params(z_space=True))
+                                                         parameters=None, z_parameters=get_params(z_space=True),
+                                                         n_jobs=op.n_jobs)
     elif op.mode == 'class-zero':
         print('Learning Class-Embedding Poly-lingual Classifier')
         classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                          final_learner=get_learner(calibrate=False),
                                                          parameters=None, z_parameters=get_params(z_space=True),
-                                                         center_prob=True)
+                                                         center_prob=True,
+                                                         n_jobs=op.n_jobs)
     elif op.mode == 'class-rbfgamma':
         print('Learning Class-Embedding Poly-lingual Classifier')
         classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                          final_learner=get_learner(calibrate=False),
                                                          parameters=None, z_parameters=get_params(z_space=True),
-                                                         folded_projections=1)
+                                                         folded_projections=1,
+                                                         n_jobs=op.n_jobs)
     elif op.mode == 'class-lang':
         print('Learning Class-Embedding Poly-lingual Classifier')
         classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                          final_learner=get_learner(calibrate=False),
                                                          parameters=None, z_parameters=get_params(z_space=True),
                                                          folded_projections=1,
-                                                         language_trace=True)
+                                                         language_trace=True,
+                                                         n_jobs=op.n_jobs)
     elif op.mode == 'class-10':
         print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
         classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                          final_learner=get_learner(calibrate=False),
                                                          parameters=None, z_parameters=get_params(z_space=True),
-                                                         folded_projections=10)
+                                                         folded_projections=10,
+                                                         n_jobs=op.n_jobs)
     elif op.mode == 'class-10-nocal':
         print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
         classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=False),
                                                          final_learner=get_learner(calibrate=False),
                                                          parameters=None, z_parameters=get_params(z_space=True),
-                                                         folded_projections=10)
+                                                         folded_projections=10,
+                                                         n_jobs=op.n_jobs)
     elif op.mode == 'naive':
         print('Learning Naive Poly-lingual Classifier')
-        classifier = NaivePolylingualClassifier(base_learner=get_learner(), parameters=get_params())
+        classifier = NaivePolylingualClassifier(base_learner=get_learner(), parameters=get_params(), n_jobs=op.n_jobs)
     elif op.mode == 'juxta':
         print('Learning Juxtaposed Poly-lingual Classifier')
-        classifier = JuxtaposedPolylingualClassifier(base_learner=get_learner(), parameters=get_params())
+        classifier = JuxtaposedPolylingualClassifier(base_learner=get_learner(), parameters=get_params(), n_jobs=op.n_jobs)
     elif op.mode == 'lri':
         assert op.learner != 'nb', 'nb operates only on positive matrices'
         print('Learning Lightweight Random Indexing Poly-lingual Classifier')
-        classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params())
+        classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params(), n_jobs=op.n_jobs)
     elif op.mode == 'lri-25k':
         assert op.learner != 'nb', 'nb operates only on positive matrices'
         print('Learning Lightweight Random Indexing Poly-lingual Classifier')
-        classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params(), reduction=25000)
+        classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params(), reduction=25000, n_jobs=op.n_jobs)
     elif op.mode == 'dci-lin':
         assert op.learner!='nb', 'nb operates only on positive matrices'
         print('Learning Distributional Correspondence Indexing with Linear Poly-lingual Classifier')
-        classifier = DCIPolylingualClassifier(base_learner=get_learner(), dcf='linear', z_parameters=get_params(z_space=True))
+        classifier = DCIPolylingualClassifier(base_learner=get_learner(), dcf='linear', z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
     elif op.mode == 'dci-pmi':
         assert op.learner != 'nb', 'nb operates only on positive matrices'
         print('Learning Distributional Correspondence Indexing with PMI Poly-lingual Classifier')
-        classifier = DCIPolylingualClassifier(base_learner=get_learner(), dcf='pmi', z_parameters=get_params(z_space=True))
+        classifier = DCIPolylingualClassifier(base_learner=get_learner(), dcf='pmi', z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
     elif op.mode == 'clesa':
         lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
         print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
-        classifier = CLESAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(z_space=True))
+        classifier = CLESAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
     elif op.mode == 'upper':
         assert data.langs()==['en'], 'only English is expected in the upper bound call'
         print('Learning Upper bound as the English-only Classifier')
-        classifier = NaivePolylingualClassifier(base_learner=get_learner(), parameters=get_params()) #this is just to match the multilingual dataset format (despite there are only English documents)
+        classifier = NaivePolylingualClassifier(base_learner=get_learner(), parameters=get_params(), n_jobs=op.n_jobs) #this is just to match the multilingual dataset format (despite there are only English documents)
     elif op.mode == 'monoclass':
         assert data.langs()==['en'], 'only English is expected in the monolingual class embedding call'
         print('Learning Monolingual Class-Embedding in the English-only corpus')
         classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                          final_learner=get_learner(calibrate=False),
-                                                         parameters=None, z_parameters=get_params(z_space=True))
+                                                         parameters=None, z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
     elif op.mode == 'juxtaclass':
         print('Learning Juxtaposed-Class-Embeddings Poly-lingual Classifier')
         classifier = ClassJuxtaEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                               final_learner=get_learner(calibrate=False),
                                                               alpha=0.5,
-                                                              c_parameters=get_params(), y_parameters=get_params())
+                                                              c_parameters=get_params(), y_parameters=get_params(), n_jobs=op.n_jobs)
 
-    if op.mode == 'clesa':
-        print('running memory-friendly version of clesa')
-        lZtr = classifier.transform(data.lXtr())
-        lZte = classifier.transform(data.lXte(), accum_time=False)
-        classifier.clear_transformer()
-        classifier.fit_from_transformed(lZtr, data.lYtr())
-        l_eval = evaluate(classifier, lZte, data.lYte(), predictor=classifier.predict_from_transformed)
-    else:
-        classifier.fit(data.lXtr(), data.lYtr())
-        l_eval = evaluate(classifier, data.lXte(), data.lYte())
+    classifier.fit(data.lXtr(), data.lYtr())
+    l_eval = evaluate(classifier, data.lXte(), data.lYte())
 
     for lang in data.langs():
         macrof1, microf1, macrok, microk = l_eval[lang]
