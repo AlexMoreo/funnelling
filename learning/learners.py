@@ -162,8 +162,8 @@ class ClassEmbeddingPolylingualClassifier:
         return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
 
     def best_params(self):
-        params = {l:model.best_params() for l,model in self.doc_projector.items()}
-        params['meta'] = self.model.best_params_()
+        params = self.doc_projector.best_params()
+        params['meta'] = self.model.best_params()
         return params
 
 
@@ -479,7 +479,7 @@ class MonolingualClassifier:
         if self.parameters:
             print('debug: optimizing parameters:', self.parameters)
             self.model = GridSearchCV(self.model, param_grid=self.parameters, refit=True, cv=5, n_jobs=self.n_jobs,
-                                      error_score=0, verbose=3)
+                                      error_score=0, verbose=0)
 
         print('fitting:',self.model)
         self.model.fit(X,y)

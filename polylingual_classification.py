@@ -34,8 +34,6 @@ parser.add_option("-j", "--n_jobs", dest="n_jobs",type=int,
 parser.add_option("-s", "--set_c", dest="set_c",type=float,
                   help="Set the C parameter", default=1)
 
-
-
 #TODO: more baselines
 #TODO: think about the neural-net extension
 #TODO: make CLESA work
