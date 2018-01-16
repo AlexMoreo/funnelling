@@ -31,6 +31,8 @@ parser.add_option("-f", "--force", dest="force", action='store_true',
                   help="Run even if the result was already computed", default=False)
 parser.add_option("-j", "--n_jobs", dest="n_jobs",type=int,
                   help="Number of parallel jobs (default is -1, all)", default=-1)
+parser.add_option("-s", "--set_c", dest="set_c",type=float,
+                  help="Set the C parameter", default=1)
 
 
 
@@ -53,13 +55,13 @@ parser.add_option("-j", "--n_jobs", dest="n_jobs",type=int,
 #reales es artificial
 #note: really make_scorer(macroF1) seems to be better with the actual loss [tough not significantly]
 
-def get_learner(calibrate=False, defaultC=1):
+def get_learner(calibrate=False):
     if op.learner == 'svm':
-        learner = SVC(kernel='linear', probability=calibrate, cache_size=1000, C=defaultC)
+        learner = SVC(kernel='linear', probability=calibrate, cache_size=1000, C=op.set_c)
     elif op.learner == 'nb':
         learner = MultinomialNB()
     elif op.learner == 'lr':
-        learner = LogisticRegression(C=defaultC)
+        learner = LogisticRegression(C=op.set_c)
     return learner
 
 def get_params(z_space=False):
@@ -81,6 +83,7 @@ if __name__=='__main__':
 
     assert exists(op.dataset), 'Unable to find file '+str(op.dataset)
     assert op.learner in ['svm', 'lr', 'nb'], 'unexpected learner'
+    assert not (op.set_c != 1. and op.optimc), 'Parameter C cannot be defined along with optim_c option'
     # assert op.mode in ['class','class-lang','class-10', 'class-10-nocal', 'naive', 'juxta', 'lri', 'lri-25k',
     #                    'dci-lin', 'dci-pmi', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
 
@@ -112,38 +115,9 @@ if __name__=='__main__':
                                                          final_learner=get_learner(calibrate=False),
                                                          parameters=None, z_parameters=get_params(z_space=True),
                                                          n_jobs=op.n_jobs)
-    elif op.mode == 'class-zero':
-        print('Learning Class-Embedding Poly-lingual Classifier')
-        classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
-                                                         final_learner=get_learner(calibrate=False),
-                                                         parameters=None, z_parameters=get_params(z_space=True),
-                                                         center_prob=True,
-                                                         n_jobs=op.n_jobs)
-    elif op.mode == 'class-rbfgamma':
-        print('Learning Class-Embedding Poly-lingual Classifier')
-        classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
-                                                         final_learner=get_learner(calibrate=False),
-                                                         parameters=None, z_parameters=get_params(z_space=True),
-                                                         folded_projections=1,
-                                                         n_jobs=op.n_jobs)
-    elif op.mode == 'class-lang':
-        print('Learning Class-Embedding Poly-lingual Classifier')
-        classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
-                                                         final_learner=get_learner(calibrate=False),
-                                                         parameters=None, z_parameters=get_params(z_space=True),
-                                                         folded_projections=1,
-                                                         language_trace=True,
-                                                         n_jobs=op.n_jobs)
     elif op.mode == 'class-10':
         print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
         classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
-                                                         final_learner=get_learner(calibrate=False),
-                                                         parameters=None, z_parameters=get_params(z_space=True),
-                                                         folded_projections=10,
-                                                         n_jobs=op.n_jobs)
-    elif op.mode == 'class-10-nocal':
-        print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
-        classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=False),
                                                          final_learner=get_learner(calibrate=False),
                                                          parameters=None, z_parameters=get_params(z_space=True),
                                                          folded_projections=10,
@@ -199,8 +173,8 @@ if __name__=='__main__':
         #macrof1, microf1 = l_eval[lang]
         print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (lang, macrof1, microf1))
         #results.add_row(result_id, op.mode, op.optimc, dataset_name, classifier.time, lang, macrof1, microf1, macrok, microk, notes=op.note)
-        notes=op.note # + classifier.best_params
-        results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, op.binary, op.languages, classifier.time, lang, macrof1, microf1, macrok, microk, notes=op.note)
+        notes=op.note + ('C='+str(op.set_c) if op.set_c!=1 else '') + str(classifier.best_params() if op.optimc else '')
+        results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, op.binary, op.languages, classifier.time, lang, macrof1, microf1, macrok, microk, notes=notes)
 
 
 

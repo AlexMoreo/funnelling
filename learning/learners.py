@@ -161,6 +161,11 @@ class ClassEmbeddingPolylingualClassifier:
             lZ = self._extend_with_lang_trace(lZ)
         return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
 
+    def best_params(self):
+        params = {l:model.best_params() for l,model in self.doc_projector.items()}
+        params['meta'] = self.model.best_params_()
+        return params
+
 
 class NaivePolylingualClassifier:
     """
@@ -227,6 +232,9 @@ class NaivePolylingualClassifier:
             scores = Parallel(n_jobs=self.n_jobs)(delayed(self.model[lang].predict)(lX[lang]) for lang in langs)
             return {lang: scores[i] for i, lang in enumerate(langs)}
 
+    def best_params(self):
+        return {l:model.best_params() for l,model in self.model.items()}
+
 
 class CLESAPolylingualClassifier:
     """
@@ -288,6 +296,9 @@ class CLESAPolylingualClassifier:
               '[warning: no further transformation will be allowed]')
         self.doc_projector = None
 
+    def best_params(self):
+        return self.model.best_params_()
+
 
 class DCIPolylingualClassifier:
     """
@@ -298,6 +309,7 @@ class DCIPolylingualClassifier:
         self.z_parameters=z_parameters
         self.n_jobs = n_jobs
         self.doc_projector = DistributionalCorrespondenceIndexing(dcf=dcf, post='normal', n_jobs=n_jobs)
+        self.model = None
 
     def fit(self, lX, ly):
         tinit = time.time()
@@ -324,6 +336,9 @@ class DCIPolylingualClassifier:
         assert self.model is not None, 'predict called before fit'
         lZ = self.doc_projector.transform(lX)
         return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
+
+    def best_params(self):
+        return self.model.best_params()
 
 
 class LRIPolylingualClassifier:
@@ -391,6 +406,9 @@ class LRIPolylingualClassifier:
         lZ = self.transform(lX)
         return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
 
+    def best_params(self):
+        return self.model.best_params()
+
 
 class JuxtaposedPolylingualClassifier:
 
@@ -429,6 +447,9 @@ class JuxtaposedPolylingualClassifier:
         assert self.model is not None, 'predict called before fit'
         return _joblib_transform_multiling(self.model.predict, lX, n_jobs=self.n_jobs)
 
+    def best_params(self):
+        return self.model.best_params()
+
 
 class MonolingualClassifier:
 
@@ -437,6 +458,7 @@ class MonolingualClassifier:
         self.parameters = parameters
         self.model = None
         self.n_jobs = n_jobs
+        self.best_params_ = None
 
     def fit(self, X, y):
         tinit = time.time()
@@ -457,12 +479,13 @@ class MonolingualClassifier:
         if self.parameters:
             print('debug: optimizing parameters:', self.parameters)
             self.model = GridSearchCV(self.model, param_grid=self.parameters, refit=True, cv=5, n_jobs=self.n_jobs,
-                                      error_score=0)
+                                      error_score=0, verbose=3)
 
         print('fitting:',self.model)
         self.model.fit(X,y)
         if isinstance(self.model, GridSearchCV):
-            print('best parameters: ', self.model.best_params_)
+            self.best_params_ = self.model.best_params_
+            print('best parameters: ', self.best_params_)
         self.time=time.time()-tinit
         return self
 
@@ -477,11 +500,13 @@ class MonolingualClassifier:
         _sort_if_sparse(X)
         return self.model.predict_proba(X)
 
-
     def predict(self, X):
         assert self.model is not None, 'predict called before fit'
         _sort_if_sparse(X)
         return self.model.predict(X)
+
+    def best_params(self):
+        return self.best_params_
 
 
 class ClassJuxtaEmbeddingPolylingualClassifier:
