@@ -88,7 +88,7 @@ if __name__=='__main__':
     results = PolylingualClassificationResults(op.output)
 
     dataset_file = os.path.basename(op.dataset)
-    result_id = dataset_file+'_'+op.mode+op.learner+('_optimC' if op.optimc else '')+\
+    result_id = dataset_file+'_'+op.mode+op.learner+('_optimC' if op.optimc else ('_setc'+str(op.set_c) if op.set_c!=1. else ''))+\
                 ('_bin'+str(op.binary) if op.binary != -1 else '')+\
                 ('_langs'+str(op.languages) if op.languages != -1 else '')
 
