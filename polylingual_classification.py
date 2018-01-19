@@ -25,8 +25,8 @@ parser.add_option("-c", "--optimc", dest="optimc", action='store_true',
                   help="Optimices hyperparameters", default=False)
 parser.add_option("-b", "--binary", dest="binary",type=int,
                   help="Run experiments on a single category specified with this parameter", default=-1)
-parser.add_option("-L", "--languages", dest="languages",type=int,
-                  help="Chooses the maximum number of random languages to consider", default=-1)
+parser.add_option("-L", "--lang_ablation", dest="lang_ablation",type=str,
+                  help="Removes the language from the training", default=None)
 parser.add_option("-f", "--force", dest="force", action='store_true',
                   help="Run even if the result was already computed", default=False)
 parser.add_option("-j", "--n_jobs", dest="n_jobs",type=int,
@@ -34,22 +34,11 @@ parser.add_option("-j", "--n_jobs", dest="n_jobs",type=int,
 parser.add_option("-s", "--set_c", dest="set_c",type=float,
                   help="Set the C parameter", default=1)
 
-#TODO: more baselines
 #TODO: think about the neural-net extension
-#TODO: make CLESA work
 #TODO: redo the juxtaclass, according to "Discriminative Methods for Multi-labeled Classification" and rename properly
 #TODO: calibration single-label
-#TODO: experiment with varying number of categories
-#TODO: arreglar la calibración y la búsqueda de parámetros
-#TODO: fisher scores
-#TODO: finish singlelabel-fragment
-#TODO: probar feature selection?
-#TODO: learners: lasso?
-#TODO: dejo el single-fragment a False, o sea que genero un falso multilabel
-#TODO: class-10 creo que el problema esta en como vienen representadas las categorias raras, los unicos ejemplos positivos
-#      son clasificados por clasificadores provenientes de un fold donde no habia ningun ejemplo positivo
 
-#note: Multinomial Naive-Bayes descargado: no está calibrado, no funciona con valores negativos, la adaptación a valores
+#note: Multinomial Naive-Bayes descartado: no está calibrado, no funciona con valores negativos, la adaptación a valores
 #reales es artificial
 #note: really make_scorer(macroF1) seems to be better with the actual loss [tough not significantly]
 
@@ -90,7 +79,7 @@ if __name__=='__main__':
     dataset_file = os.path.basename(op.dataset)
     result_id = dataset_file+'_'+op.mode+op.learner+('_optimC' if op.optimc else ('_setc'+str(op.set_c) if op.set_c!=1. else ''))+\
                 ('_bin'+str(op.binary) if op.binary != -1 else '')+\
-                ('_langs'+str(op.languages) if op.languages != -1 else '')
+                ('_langablation_'+str(op.lang_ablation) if op.lang_ablation else '')
 
     if not op.force and results.already_calculated(result_id):
         print('Experiment <'+result_id+'> already computed. Exit.')
@@ -100,10 +89,11 @@ if __name__=='__main__':
     if op.binary != -1:
         assert op.binary < data.num_categories(), 'category not in scope'
         data.set_view(categories=np.array([op.binary]))
-    if op.languages != -1:
-        assert op.languages < len(data.langs()), 'too many languages'
-        languages = ['en'] + [l for l in data.langs() if l != 'en']
-        data.set_view(languages=languages[:op.languages])
+    if op.lang_ablation:
+        assert op.lang_ablation in data.langs(), 'language for ablation test not in scope'
+        languages = list(data.langs())
+        languages.remove(op.lang_ablation)
+        data.set_view(languages=languages)
     data.show_dimensions()
     #data.show_category_prevalences()
 
@@ -172,7 +162,7 @@ if __name__=='__main__':
         print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (lang, macrof1, microf1))
         #results.add_row(result_id, op.mode, op.optimc, dataset_name, classifier.time, lang, macrof1, microf1, macrok, microk, notes=op.note)
         notes=op.note + ('C='+str(op.set_c) if op.set_c!=1 else '') + str(classifier.best_params() if op.optimc else '')
-        results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, op.binary, op.languages, classifier.time, lang, macrof1, microf1, macrok, microk, notes=notes)
+        results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, op.binary, op.lang_ablation, classifier.time, lang, macrof1, microf1, macrok, microk, notes=notes)
 
 
 
