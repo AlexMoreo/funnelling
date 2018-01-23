@@ -140,12 +140,12 @@ if __name__=='__main__':
             classifier.fit(data.lXtr(), data.lYtr())
             l_eval = evaluate(classifier, data.lXte(), data.lYte())
 
-        for eval_lang in [lang1, lang2]:
-            macrof1, microf1, macrok, microk = l_eval[eval_lang]
-            print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (eval_lang, macrof1, microf1))
-            notes = op.note + ('C=' + str(op.set_c) if op.set_c != 1 else '') + str(classifier.best_params() if op.optimc else '')
-            train_added_lang = lang1 if eval_lang==lang2 else lang2
-            results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, -1, train_added_lang, classifier.time, eval_lang, macrof1, microf1, macrok, microk, notes=notes)
+            for eval_lang in [lang1, lang2]:
+                macrof1, microf1, macrok, microk = l_eval[eval_lang]
+                print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (eval_lang, macrof1, microf1))
+                notes = op.note + ('C=' + str(op.set_c) if op.set_c != 1 else '') + str(classifier.best_params() if op.optimc else '')
+                train_added_lang = lang1 if eval_lang==lang2 else lang2
+                results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, -1, train_added_lang, classifier.time, eval_lang, macrof1, microf1, macrok, microk, notes=notes)
 
 
 
