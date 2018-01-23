@@ -1,5 +1,5 @@
 from sklearn.externals.joblib import Parallel, delayed
-from util.metrics import macroF1,microF1,macroK,microK, single_metric_statistics
+from util.metrics import macroF1,microF1,macroK,microK, hard_single_metric_statistics
 from sklearn.metrics import f1_score
 import numpy as np
 
@@ -36,7 +36,7 @@ def get_binary_counters(polylingual_method, lX, ly, predictor=None):
 def binary_counters(y, y_):
     y = np.reshape(y, (-1))
     assert y.shape==y_.shape and len(y.shape)==1, 'error, binary vector expected'
-    counters = single_metric_statistics(y,y_)
+    counters = hard_single_metric_statistics(y, y_)
     return counters.tp, counters.tn, counters.fp, counters.fn
 
 
