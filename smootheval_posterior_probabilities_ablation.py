@@ -5,12 +5,12 @@ from learning.learners import *
 from util.metrics import *
 
 
-output = './results_ABLATION_posterior_probabilities_rcv.csv'
+output = './results_ABLATION_posterior_probabilities_jrc.csv'
 
-for run in range(10):
+for run in range(5):
 
-    dataset = '/media/moreo/1TB Volume/Datasets/RCV2/rcv1-2_nltk_trByLang1000_teByLang1000_processed_run'+str(run)+'.pickle'
-    #dataset = '/media/moreo/1TB Volume/Datasets/JRC_Acquis_v3/jrc_nltk_1958-2005vs2006_all_top300_noparallel_processed_run'+str(run)+'.pickle'
+    #dataset = '/media/moreo/1TB Volume/Datasets/RCV2/rcv1-2_nltk_trByLang1000_teByLang1000_processed_run'+str(run)+'.pickle'
+    dataset = '/media/moreo/1TB Volume/Datasets/JRC_Acquis_v3/jrc_nltk_1958-2005vs2006_all_top300_noparallel_processed_run'+str(run)+'.pickle'
     data = MultilingualDataset.load(dataset)
     data.show_dimensions()
 
