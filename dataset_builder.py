@@ -93,16 +93,21 @@ class MultilingualDataset:
         nC = self.num_categories()
         accum_tr = np.zeros(nC, dtype=np.int)
         accum_te = np.zeros(nC, dtype=np.int)
+        in_langs = np.zeros(nC, dtype=np.int) #count languages with at least one positive example (per category)
         for (lang, ((Xtr, Ytr, IDtr), (Xte, Yte, IDte))) in self.multiling_dataset.items():
             if lang not in self.langs(): continue
             prev_train = np.sum(self.cat_view(Ytr), axis=0)
             prev_test = np.sum(self.cat_view(Yte), axis=0)
             accum_tr += prev_train
             accum_te += prev_test
+            in_langs += (prev_train>0)*1
             print(lang+'-train', prev_train)
             print(lang+'-test', prev_test)
         print('all-train', accum_tr)
         print('all-test', accum_te)
+
+        return accum_tr, accum_te, in_langs
+
 
     def set_labels(self, labels):
         self.labels = labels
