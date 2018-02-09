@@ -2,10 +2,10 @@ from dataset_builder import MultilingualDataset
 import numpy as np
 import scipy
 
-dataset = '/media/moreo/1TB Volume/Datasets/JRC_Acquis_v3/jrc_nltk_1958-2005vs2006_all_top300_noparallel_processed_run1.pickle'
+dataset = '/media/moreo/1TB Volume/Datasets/JRC_Acquis_v3/jrc_nltk_1958-2005vs2006_all_top300_noparallel_processed_runX.pickle'
 #dataset = '/media/moreo/1TB Volume/Datasets/JRC_Acquis_v3/jrc_nltk_1958-2005vs2006_leaves_top300_noparallel_processed_singlefragment_run1.pickle'
 #for run in range(10):
-#dataset = '/media/moreo/1TB Volume/Datasets/RCV2/rcv1-2_nltk_trByLang1000_teByLang1000_processed_run0.pickle'
+#dataset = '/media/moreo/1TB Volume/Datasets/RCV2/rcv1-2_nltk_trByLang1000_teByLang1000_processed_runX.pickle'
 #dataset = '/media/moreo/1TB Volume/Datasets/RCV2/rcv1-2_nltk_trByLang1000_teByLang1000_processedsinglefragment_run0.pickle'
 data = MultilingualDataset.load(dataset)
 juxta = MultilingualDataset.load(dataset.replace('.pickle', '_yuxtaposed.pickle'))
@@ -45,4 +45,10 @@ print('#cats/doc: min={0:.0f} max={1:.0f} ave={2:.2f}'.format(np.min(ncats), np.
 ncats = np.sum(Ytr, axis=0)
 print('#docs/cat: min={0:.0f} max={1:.0f} ave={2:.2f}'.format(np.min(ncats), np.max(ncats), np.mean(ncats)))
 
-data.show_category_prevalences()
+tr_prev, te_prev, in_langs = data.show_category_prevalences()
+
+with open('info_dataset.csv', 'a') as fout:
+    pass
+    fout.write("{}\t{}\t{}\t{}\t{}\t{}\n".format(' ', ' ', data.dataset_name, 'labels', ' ', '\t'.join(data.labels)))
+    fout.write("{}\t{}\t{}\t{}\t{}\t{}\n".format(' ', ' ', data.dataset_name, 'prevalence', ' ', '\t'.join([str(x) for x in tr_prev])))
+    fout.write("{}\t{}\t{}\t{}\t{}\t{}\n".format(' ', ' ', data.dataset_name, 'in_langs', ' ', '\t'.join([str(x) for x in in_langs])))

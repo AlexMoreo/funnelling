@@ -33,6 +33,8 @@ parser.add_option("-j", "--n_jobs", dest="n_jobs",type=int,
                   help="Number of parallel jobs (default is -1, all)", default=-1)
 parser.add_option("-s", "--set_c", dest="set_c",type=float,
                   help="Set the C parameter", default=1)
+parser.add_option("-S", "--singlelabel", dest="singlelabel", action='store_true',
+                  help="Treat the label matrix as a single-label one", default=False)
 
 #TODO: think about the neural-net extension
 #TODO: redo the juxtaclass, according to "Discriminative Methods for Multi-labeled Classification" and rename properly
@@ -44,7 +46,7 @@ parser.add_option("-s", "--set_c", dest="set_c",type=float,
 
 def get_learner(calibrate=False):
     if op.learner == 'svm':
-        learner = SVC(kernel='linear', probability=calibrate, cache_size=1000, C=op.set_c)
+        learner = SVC(kernel='linear', probability=calibrate, cache_size=1000, C=op.set_c, random_state=1)
     elif op.learner == 'nb':
         learner = MultinomialNB()
     elif op.learner == 'lr':
@@ -153,7 +155,7 @@ if __name__=='__main__':
                                                               alpha=0.5,
                                                               c_parameters=get_params(), y_parameters=get_params(), n_jobs=op.n_jobs)
 
-    classifier.fit(data.lXtr(), data.lYtr())
+    classifier.fit(data.lXtr(), data.lYtr(), single_label=op.singlelabel)
     l_eval = evaluate(classifier, data.lXte(), data.lYte())
 
     for lang in data.langs():
@@ -163,6 +165,3 @@ if __name__=='__main__':
         #results.add_row(result_id, op.mode, op.optimc, dataset_name, classifier.time, lang, macrof1, microf1, macrok, microk, notes=op.note)
         notes=op.note + ('C='+str(op.set_c) if op.set_c!=1 else '') + str(classifier.best_params() if op.optimc else '')
         results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, op.binary, op.lang_ablation, classifier.time, lang, macrof1, microf1, macrok, microk, notes=notes)
-
-
-

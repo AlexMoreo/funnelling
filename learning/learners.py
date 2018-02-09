@@ -1,6 +1,10 @@
 import numpy as np
 import scipy
 import time
+
+import sklearn
+
+from learning.singlelabelsvm import SingleLabelGaps
 from transformers.clesa import CLESA
 from transformers.riboc import RandomIndexingBoC
 from transformers.dci import DistributionalCorrespondenceIndexing
@@ -129,7 +133,7 @@ class ClassEmbeddingPolylingualClassifier:
             return np.hstack([Z, L])
         return {l: extend_with_lang_trace(Z, l) for l, Z in lZ.items()}
 
-    def fit(self, lX, ly):
+    def fit(self, lX, ly, single_label=False):
         tinit = time.time()
 
         if self.language_trace:
@@ -143,7 +147,7 @@ class ClassEmbeddingPolylingualClassifier:
 
         print('fitting the Z-space of shape={}'.format(Z.shape))
         self.model = MonolingualClassifier(base_learner=self.final_learner, parameters=self.z_parameters, n_jobs=self.n_jobs)
-        self.model.fit(Z,zy)
+        self.model.fit(Z,zy,single_label)
         self.time = time.time() - tinit
         return self
 
@@ -177,7 +181,7 @@ class NaivePolylingualClassifier:
         self.model = None
         self.n_jobs = n_jobs
 
-    def fit(self, lX, ly):
+    def fit(self, lX, ly, single_label=False):
         """
         trains the independent monolingual classifiers
         :param lX: a dictionary {language_label: X csr-matrix}
@@ -190,7 +194,7 @@ class NaivePolylingualClassifier:
         for lang in langs: _sort_if_sparse(lX[lang])
         models = Parallel(n_jobs=self.n_jobs)\
             (delayed(MonolingualClassifier(self.base_learner, parameters=self.parameters).fit)
-             (lX[lang],ly[lang]) for lang in langs)
+             (lX[lang],ly[lang], single_label) for lang in langs)
         self.model = {lang: models[i] for i, lang in enumerate(langs)}
         self.empty_categories = {lang:self.model[lang].empty_categories for lang in langs}
         self.time = time.time() - tinit
@@ -251,14 +255,14 @@ class CLESAPolylingualClassifier:
         self.n_jobs = n_jobs
         self.time = 0
 
-    def fit(self, lX, ly):
+    def fit(self, lX, ly, single_label=False):
         assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in fit'
 
         print('projecting the documents')
         lZ = self.transform(lX)
-        return self.fit_from_transformed(lZ, ly)
+        return self.fit_from_transformed(lZ, ly, single_label=False)
 
-    def fit_from_transformed(self, lZ, ly):
+    def fit_from_transformed(self, lZ, ly, single_label=False):
         tinit = time.time()
         langs = list(lZ.keys())
         Z = np.vstack([lZ[lang] for lang in langs])  # Z is the language independent space
@@ -267,7 +271,7 @@ class CLESAPolylingualClassifier:
         print('fitting the Z-space of shape={}'.format(Z.shape))
         self.model = MonolingualClassifier(base_learner=self.base_learner, parameters=self.z_parameters,
                                            n_jobs=self.n_jobs)
-        self.model.fit(Z, zy)
+        self.model.fit(Z, zy, single_label)
         self.time = self.time + (time.time() - tinit)
         return self
 
@@ -311,7 +315,7 @@ class DCIPolylingualClassifier:
         self.doc_projector = DistributionalCorrespondenceIndexing(dcf=dcf, post='normal', n_jobs=n_jobs)
         self.model = None
 
-    def fit(self, lX, ly):
+    def fit(self, lX, ly, single_label=False):
         tinit = time.time()
         print('fitting the projectors...')
         self.doc_projector.fit(lX,ly)
@@ -324,7 +328,7 @@ class DCIPolylingualClassifier:
 
         print('fitting the Z-space of shape={}'.format(Z.shape))
         self.model = MonolingualClassifier(base_learner=self.base_learner, parameters=self.z_parameters)
-        self.model.fit(Z, zy)
+        self.model.fit(Z, zy, single_label)
         self.time = time.time() - tinit
         return self
 
@@ -362,7 +366,7 @@ class LRIPolylingualClassifier:
         self.reduction = reduction
         self.n_jobs = n_jobs
 
-    def fit(self, lX, ly):
+    def fit(self, lX, ly, single_label=False):
         """
         trains one classifiers in the juxtaposed random indexed feature space
         :param lX: a dictionary {language_label: X csr-matrix}; the feature space is assumed to be juxtaposed
@@ -389,7 +393,7 @@ class LRIPolylingualClassifier:
 
         print('model fit')
         self.model = MonolingualClassifier(self.base_learner, parameters=self.parameters, n_jobs=self.n_jobs)
-        self.model.fit(Xtr, Ytr)
+        self.model.fit(Xtr, Ytr, single_label)
         self.time = time.time() - tinit
         return self
 
@@ -418,7 +422,7 @@ class JuxtaposedPolylingualClassifier:
         self.n_jobs = n_jobs
         self.model = None
 
-    def fit(self, lX, ly):
+    def fit(self, lX, ly, single_label=False):
         """
         trains one classifiers in the juxtaposed feature space
         :param lX: a dictionary {language_label: X csr-matrix}; the feature space is assumed to be juxtaposed
@@ -435,7 +439,7 @@ class JuxtaposedPolylingualClassifier:
         Ytr = np.vstack([ly[lang] for lang in langs])
 
         self.model = MonolingualClassifier(base_learner=self.base_learner, parameters=self.parameters, n_jobs=self.n_jobs)
-        self.model.fit(Xtr, Ytr)
+        self.model.fit(Xtr, Ytr, single_label)
         self.time = time.time() - tinit
         return self
 
@@ -460,20 +464,25 @@ class MonolingualClassifier:
         self.n_jobs = n_jobs
         self.best_params_ = None
 
-    def fit(self, X, y):
+    def fit(self, X, y, single_label=False):
         tinit = time.time()
         _sort_if_sparse(X)
-        self.empty_categories=np.argwhere(np.sum(y, axis=0)==0).flatten()
+        self.empty_categories = np.argwhere(np.sum(y, axis=0)==0).flatten()
 
-        # multi-class multi-label?
+        # multi-class format
         if len(y.shape) == 2:
             if self.parameters is not None:
                 self.parameters = [{'estimator__' + key: params[key] for key in params.keys()}
                                    for params in self.parameters]
-            self.model = OneVsRestClassifier(self.learner, n_jobs=self.n_jobs)
+            if not single_label:
+                self.model = OneVsRestClassifier(self.learner, n_jobs=self.n_jobs)
+            else:
+                #despite the format being that of multi-class multi-label, each document is labeled with exactly one
+                #class, so it is actually single-label; this is however useful to cope with class-gaps across languages
+                self.model = SingleLabelGaps(estimator=sklearn.clone(self.learner))
         else:
-            #not debugged
             self.model = self.learner
+            raise NotImplementedError('not working as a base-classifier for funneling if there are gaps in the labels across languages')
 
         # parameter optimization?
         if self.parameters:
@@ -527,10 +536,10 @@ class ClassJuxtaEmbeddingPolylingualClassifier:
         self.model = None
         self.n_jobs = n_jobs
 
-    def fit(self, lX, ly):
+    def fit(self, lX, ly, single_label=False):
         tinit = time.time()
         print('fitting the projectors...')
-        self.doc_projector.fit(lX, ly)
+        self.doc_projector.fit(lX, ly, single_label)
 
         print('projecting the documents')
         langs = list(lX.keys())
@@ -545,7 +554,7 @@ class ClassJuxtaEmbeddingPolylingualClassifier:
 
         print('fitting the XZ-space of shape={}'.format(XZ.shape))
         self.model = MonolingualClassifier(base_learner=self.final_learner, parameters=self.y_parameters, n_jobs=self.n_jobs)
-        self.model.fit(XZ,Y)
+        self.model.fit(XZ,Y, single_label)
         self.time = time.time() - tinit
         return self
 
