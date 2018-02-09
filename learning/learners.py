@@ -260,7 +260,7 @@ class CLESAPolylingualClassifier:
 
         print('projecting the documents')
         lZ = self.transform(lX)
-        return self.fit_from_transformed(lZ, ly, single_label=False)
+        return self.fit_from_transformed(lZ, ly, single_label=single_label)
 
     def fit_from_transformed(self, lZ, ly, single_label=False):
         tinit = time.time()
