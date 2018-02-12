@@ -301,7 +301,7 @@ class CLESAPolylingualClassifier:
         self.doc_projector = None
 
     def best_params(self):
-        return self.model.best_params_()
+        return self.model.best_params_
 
 
 class DCIPolylingualClassifier:
@@ -465,6 +465,12 @@ class MonolingualClassifier:
         self.best_params_ = None
 
     def fit(self, X, y, single_label=False):
+        if X.shape[0] == 0:
+            print('Warning: X has 0 elements, a trivial rejector will be created')
+            self.model = TrivialRejector().fit(X,y)
+            self.empty_categories = np.arange(y.shape[1])
+            return self
+
         tinit = time.time()
         _sort_if_sparse(X)
         self.empty_categories = np.argwhere(np.sum(y, axis=0)==0).flatten()
@@ -516,6 +522,15 @@ class MonolingualClassifier:
 
     def best_params(self):
         return self.best_params_
+
+class TrivialRejector:
+    def fit(self, X, y):
+        self.cats = y.shape[1]
+        return self
+    def decision_function(self, X): return np.zeros((X.shape[0],self.cats))
+    def predict(self, X): return np.zeros((X.shape[0],self.cats))
+    def predict_proba(self, X): return np.zeros((X.shape[0],self.cats))
+    def best_params(self): return {}
 
 
 class ClassJuxtaEmbeddingPolylingualClassifier:
