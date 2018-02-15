@@ -68,6 +68,7 @@ class ClassEmbeddingPolylingualClassifier:
             repair_empty_folds = False
 
         print('fitting the projectors...')
+
         self.doc_projector.fit(lXtr, lYtr)
 
         print('projecting the documents')
@@ -77,6 +78,7 @@ class ClassEmbeddingPolylingualClassifier:
         if repair_empty_folds:
             empty_categories = self.doc_projector.empty_categories
             lZ_bu = self.doc_projector_bu.predict_proba(lXproj)
+
             for lang in langs:
                 repair = empty_categories[lang]
                 lZ[lang][:,repair] = lZ_bu[lang][:,repair]
@@ -134,6 +136,7 @@ class ClassEmbeddingPolylingualClassifier:
         return {l: extend_with_lang_trace(Z, l) for l, Z in lZ.items()}
 
     def fit(self, lX, ly, single_label=False):
+        self.single_label = single_label
         tinit = time.time()
 
         if self.language_trace:
@@ -146,8 +149,9 @@ class ClassEmbeddingPolylingualClassifier:
 
 
         print('fitting the Z-space of shape={}'.format(Z.shape))
-        self.model = MonolingualClassifier(base_learner=self.final_learner, parameters=self.z_parameters, n_jobs=self.n_jobs)
-        self.model.fit(Z,zy,single_label)
+        if not self.single_label:
+            self.model = MonolingualClassifier(base_learner=self.final_learner, parameters=self.z_parameters, n_jobs=self.n_jobs)
+            self.model.fit(Z,zy,single_label)
         self.time = time.time() - tinit
         return self
 
@@ -156,18 +160,28 @@ class ClassEmbeddingPolylingualClassifier:
         :param lX: a dictionary {language_label: X csr-matrix}
         :return: a dictionary of predictions
         """
-        assert self.model is not None, 'predict called before fit'
+        assert self.single_label or self.model is not None, 'predict called before fit'
         lZ = self.doc_projector.predict_proba(lX)
         if self.center_prob:
             lZ = {l: Z * 2. - 1. for l, Z in lZ.items()}
 
         if self.language_trace:
             lZ = self._extend_with_lang_trace(lZ)
-        return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
+
+        def ___predict_max_probable(Z):
+            y_ = np.zeros_like(Z)
+            y_[np.arange(Z.shape[0]), np.argmax(Z, axis=1)] = 1
+            return y_
+        if self.single_label:
+            return {l:___predict_max_probable(Z) for l,Z in lZ.items()}
+        else:
+            return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
+
 
     def best_params(self):
         params = self.doc_projector.best_params()
-        params['meta'] = self.model.best_params()
+        if not self.single_label:
+            params['meta'] = self.model.best_params()
         return params
 
 

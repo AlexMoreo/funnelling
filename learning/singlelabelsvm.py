@@ -20,7 +20,7 @@ class SingleLabelGaps(BaseEstimator, ClassifierMixin):
         if isinstance(classes, list):
             classes = np.array(classes)
         self._check_consistency(X, y, classes)
-        if len(y.shape)==2:
+        if self._fit_y_shape==2:
             y = self._adapt_class_matrix2array(y, classes)
         self.classes_ = classes
         self.estimator.fit(X=X,y=y)
@@ -37,9 +37,10 @@ class SingleLabelGaps(BaseEstimator, ClassifierMixin):
         return self.__reorder_output(prob, self.estimator.classes_, self.classes_)
 
     def decision_function(self, X):
-        raise ValueError('not working if the problem was binary, TODO: adapt to a matrix output if needed')
+        #raise ValueError('not working if the problem was binary, TODO: adapt to a matrix output if needed')
         decisions = self.estimator.decision_function(X)
-        return self.__reorder_output(decisions, self.estimator.classes_, self.classes)
+        #decisions /= np.max(np.abs(decisions), axis=0)
+        return self.__reorder_output(decisions, self.estimator.classes_, self.classes_)
 
     def __reorder_output(self, estimator_output, estimator_classes, self_classes):
         if len(estimator_classes) != len(self_classes) or not np.all(estimator_classes == self_classes):

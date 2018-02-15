@@ -158,10 +158,13 @@ if __name__=='__main__':
     classifier.fit(data.lXtr(), data.lYtr(), single_label=op.singlelabel)
     l_eval = evaluate(classifier, data.lXte(), data.lYte())
 
+    metrics  = []
     for lang in data.langs():
         macrof1, microf1, macrok, microk = l_eval[lang]
-        #macrof1, microf1 = l_eval[lang]
+        metrics.append([macrof1, microf1, macrok, microk])
         print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (lang, macrof1, microf1))
         #results.add_row(result_id, op.mode, op.optimc, dataset_name, classifier.time, lang, macrof1, microf1, macrok, microk, notes=op.note)
         notes=op.note + ('C='+str(op.set_c) if op.set_c!=1 else '') + str(classifier.best_params() if op.optimc else '')
         results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, op.binary, op.lang_ablation, classifier.time, lang, macrof1, microf1, macrok, microk, notes=notes)
+
+    print('Averages: MF1, mF1, MK, mK', np.mean(np.array(metrics), axis=0))
