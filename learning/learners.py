@@ -1,9 +1,7 @@
 import numpy as np
 import scipy
 import time
-
 import sklearn
-
 from learning.singlelabelsvm import SingleLabelGaps
 from transformers.clesa import CLESA
 from transformers.riboc import RandomIndexingBoC
@@ -22,13 +20,13 @@ from sklearn.naive_bayes import MultinomialNB
 from sklearn.preprocessing import normalize
 
 
-class ClassEmbeddingPolylingualClassifier:
+class FunnelingPolylingualClassifier:
     """
     This classifier projects each document d into a language-independent feature space where each dimension fi is the
     decision score phi_l(d,ci) of an auxiliar classifier phi_l trained on category ci for documents in language l;
     then trains one single classifier for all documents in this space, irrespective of their originary language
     """
-    def __init__(self, auxiliar_learner, final_learner, parameters=None, z_parameters=None, folded_projections=1, language_trace=False, norm=False, center_prob=False, n_jobs=-1):
+    def __init__(self, auxiliar_learner, final_learner, parameters=None, z_parameters=None, folded_projections=1, language_trace=False, norm=False, n_jobs=-1):
         """
         :param parameters: parameters for the learner in the doc_projector
         :param z_parameters: parameters for the learner in the z-space
@@ -48,7 +46,6 @@ class ClassEmbeddingPolylingualClassifier:
         self.folded_projections = folded_projections
         self.language_trace = language_trace
         self.norm = norm
-        self.center_prob = center_prob
         self.n_jobs = n_jobs
 
     def _get_zspace(self, lXtr, lYtr, lXproj=None, lYproj=None):
@@ -82,9 +79,6 @@ class ClassEmbeddingPolylingualClassifier:
             for lang in langs:
                 repair = empty_categories[lang]
                 lZ[lang][:,repair] = lZ_bu[lang][:,repair]
-
-        if self.center_prob:
-            lZ = {l: Z * 2. - 1. for l, Z in lZ.items()}
 
         if self.language_trace:
             lZ = self._extend_with_lang_trace(lZ)
@@ -137,6 +131,7 @@ class ClassEmbeddingPolylingualClassifier:
 
     def fit(self, lX, ly, single_label=False):
         self.single_label = single_label
+        if self.single_label: assert self.final_learner.probability, 'the final classifier should be calibrated when single label mode is active'
         tinit = time.time()
 
         if self.language_trace:
@@ -147,11 +142,11 @@ class ClassEmbeddingPolylingualClassifier:
         else:
             Z, zy = self._get_zspace_folds(lX, ly)
 
-
         print('fitting the Z-space of shape={}'.format(Z.shape))
-        if not self.single_label:
-            self.model = MonolingualClassifier(base_learner=self.final_learner, parameters=self.z_parameters, n_jobs=self.n_jobs)
-            self.model.fit(Z,zy,single_label)
+
+        self.model = MonolingualClassifier(base_learner=self.final_learner, parameters=self.z_parameters, n_jobs=self.n_jobs)
+        #self.model.fit(Z,zy,single_label)
+        self.model.fit(Z, zy)
         self.time = time.time() - tinit
         return self
 
@@ -162,20 +157,22 @@ class ClassEmbeddingPolylingualClassifier:
         """
         assert self.single_label or self.model is not None, 'predict called before fit'
         lZ = self.doc_projector.predict_proba(lX)
-        if self.center_prob:
-            lZ = {l: Z * 2. - 1. for l, Z in lZ.items()}
 
         if self.language_trace:
             lZ = self._extend_with_lang_trace(lZ)
 
-        def ___predict_max_probable(Z):
-            y_ = np.zeros_like(Z)
-            y_[np.arange(Z.shape[0]), np.argmax(Z, axis=1)] = 1
-            return y_
+
         if self.single_label:
-            return {l:___predict_max_probable(Z) for l,Z in lZ.items()}
+            lZZ = _joblib_transform_multiling(self.model.predict_proba, lZ, n_jobs=self.n_jobs)
+            def ___predict_max_probable(Z):
+                y_ = np.zeros_like(Z)
+                y_[np.arange(Z.shape[0]), np.argmax(Z, axis=1)] = 1
+                return y_
+
+            return {l: ___predict_max_probable(lZZ[l]) for l in lZZ.keys()}
         else:
             return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
+        # return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
 
 
     def best_params(self):
