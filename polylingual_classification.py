@@ -109,7 +109,7 @@ if __name__=='__main__':
     elif op.mode == 'class-10':
         print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
         classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
-                                                    final_learner=get_learner(calibrate=False),
+                                                    final_learner=get_learner(calibrate=op.singlelabel),
                                                     #final_learner=get_learner(calibrate=True),  # changed
                                                     parameters=None, z_parameters=get_params(z_space=True),
                                                     folded_projections=10,
