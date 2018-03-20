@@ -59,7 +59,7 @@ def get_params(z_space=False):
 
     c_range = [1e4, 1e3, 1e2, 1e1, 1]
     if op.learner == 'svm':
-        params = [{'kernel': ['linear'], 'C': c_range}] if not z_space else [{'kernel': ['linear','rbf'], 'C': c_range}] # [{'kernel': ['poly'], 'C': c_range, 'coef0':[0., 1.], 'gamma':['auto', 2.], 'degree':[3,4]}]
+        params = [{'kernel': ['linear'], 'C': c_range}] if not z_space else [{'kernel': ['poly'], 'degree':[2], 'coef0':[0,1], 'gamma':['auto', 2.], 'C': c_range}] # [{'kernel': ['poly'], 'C': c_range, 'coef0':[0., 1.], 'gamma':['auto', 2.], 'degree':[3,4]}]
         #, 'gamma' : [0.001, 0.01, 0.1, 1]
     elif op.learner == 'nb':
         params = [{'alpha': [1.0, .1, .05, .01, .001, 0.0]}]
