@@ -125,7 +125,7 @@ class FunnelingPolylingualClassifier:
         # add binary information informing of the language of provenience
         def extend_with_lang_trace(Z, lang):
             L = np.zeros((Z.shape[0], len(self.langs)), dtype=np.float)
-            L[:, self.langs[lang]] = 0.05
+            L[:, self.langs[lang]] = 1
             return np.hstack([Z, L])
         return {l: extend_with_lang_trace(Z, l) for l, Z in lZ.items()}
 

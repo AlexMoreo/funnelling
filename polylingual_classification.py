@@ -36,9 +36,19 @@ parser.add_option("-s", "--set_c", dest="set_c",type=float,
 parser.add_option("-S", "--singlelabel", dest="singlelabel", action='store_true',
                   help="Treat the label matrix as a single-label one", default=False)
 
+
+"""
+Last changes:
+- poly as the default kernel
+- language trace activated (value 1)
+"""
+
+
+
+
 #TODO: think about the neural-net extension
 #TODO: redo the juxtaclass, according to "Discriminative Methods for Multi-labeled Classification" and rename properly
-#TODO: calibration single-label
+#TODO: calibration single-labelotra
 
 #note: Multinomial Naive-Bayes descartado: no está calibrado, no funciona con valores negativos, la adaptación a valores
 #reales es artificial
