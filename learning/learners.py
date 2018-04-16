@@ -495,7 +495,7 @@ class MonolingualClassifier:
                 self.model = OneVsRestClassifier(self.learner, n_jobs=self.n_jobs)
             else:
                 #despite the format being that of multi-class multi-label, each document is labeled with exactly one
-                #class, so it is actually single-label; this is however useful to cope with class-gaps across languages
+                #class, so it is actually single-label; it is thus useful to cope with class-gaps across languages
                 self.model = SingleLabelGaps(estimator=sklearn.clone(self.learner))
         else:
             self.model = self.learner

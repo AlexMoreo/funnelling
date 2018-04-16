@@ -7,7 +7,7 @@ from util.metrics import *
 
 output = './results_ABLATION_posterior_probabilities_jrc.csv'
 
-for run in range(5):
+for run in [4,9,8,3]:
 
     #dataset = '/media/moreo/1TB Volume/Datasets/RCV2/rcv1-2_nltk_trByLang1000_teByLang1000_processed_run'+str(run)+'.pickle'
     dataset = '/media/moreo/1TB Volume/Datasets/JRC_Acquis_v3/jrc_nltk_1958-2005vs2006_all_top300_noparallel_processed_run'+str(run)+'.pickle'
@@ -30,10 +30,10 @@ for run in range(5):
         data.set_view(languages=rest_langs)
         data.show_dimensions()
 
-        classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=SVC(kernel='linear', probability=True),
-                                                         final_learner=SVC(kernel='rbf', probability=False),
-                                                         parameters=None, z_parameters=[{'kernel': ['rbf'], 'C': [1e4, 1e3, 1e2, 1e1, 1]}],
-                                                         n_jobs=-1)
+        classifier = FunnelingPolylingualClassifier(auxiliar_learner=SVC(kernel='linear', probability=True),
+                                                    final_learner=SVC(kernel='rbf', probability=False),
+                                                    parameters=None, z_parameters=[{'kernel': ['rbf'], 'C': [1e4, 1e3, 1e2, 1e1, 1]}],
+                                                    n_jobs=-1)
 
         print('Training Fun(TAT) with all but the ablated language')
         classifier.fit(data.lXtr(), data.lYtr())

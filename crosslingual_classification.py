@@ -15,7 +15,7 @@ parser = OptionParser()
 parser.add_option("-d", "--dataset", dest="dataset",
                   help="Path to the multilingual dataset processed and stored in .pickle format")
 parser.add_option("-m", "--mode", dest="mode",
-                  help="Training documents are allowed to have parallel versions of it", type=str, default=None)
+                  help="Model to apply", type=str, default=None)
 parser.add_option("-l", "--learner", dest="learner",
                   help="Learner method for classification", type=str, default='svm')
 parser.add_option("-o", "--output", dest="output",
@@ -102,17 +102,17 @@ if __name__=='__main__':
 
             if op.mode == 'class':
                 print('Learning Class-Embedding Poly-lingual Classifier')
-                classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
-                                                                 final_learner=get_learner(calibrate=False),
-                                                                 parameters=None, z_parameters=get_params(z_space=True),
-                                                                 n_jobs=op.n_jobs)
+                classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
+                                                            final_learner=get_learner(calibrate=False),
+                                                            parameters=None, z_parameters=get_params(z_space=True),
+                                                            n_jobs=op.n_jobs)
             elif op.mode == 'class-10':
                 print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
-                classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
-                                                                 final_learner=get_learner(calibrate=False),
-                                                                 parameters=None, z_parameters=get_params(z_space=True),
-                                                                 folded_projections=10,
-                                                                 n_jobs=op.n_jobs)
+                classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
+                                                            final_learner=get_learner(calibrate=False),
+                                                            parameters=None, z_parameters=get_params(z_space=True),
+                                                            folded_projections=10,
+                                                            n_jobs=op.n_jobs)
             elif op.mode == 'naive':
                 print('Learning Naive Poly-lingual Classifier')
                 classifier = NaivePolylingualClassifier(base_learner=get_learner(), parameters=get_params(), n_jobs=op.n_jobs)
@@ -150,9 +150,9 @@ if __name__=='__main__':
             elif op.mode == 'monoclass':
                 assert data.langs()==['en'], 'only English is expected in the monolingual class embedding call'
                 print('Learning Monolingual Class-Embedding in the English-only corpus')
-                classifier = ClassEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
-                                                                 final_learner=get_learner(calibrate=False),
-                                                                 parameters=None, z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
+                classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
+                                                            final_learner=get_learner(calibrate=False),
+                                                            parameters=None, z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
             elif op.mode == 'juxtaclass':
                 print('Learning Juxtaposed-Class-Embeddings Poly-lingual Classifier')
                 classifier = ClassJuxtaEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),

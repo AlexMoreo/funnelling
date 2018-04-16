@@ -14,7 +14,7 @@ parser = OptionParser()
 parser.add_option("-d", "--dataset", dest="dataset",
                   help="Path to the multilingual dataset processed and stored in .pickle format")
 parser.add_option("-m", "--mode", dest="mode",
-                  help="Training documents are allowed to have parallel versions of it", type=str, default=None)
+                  help="Model to apply", type=str, default=None)
 parser.add_option("-l", "--learner", dest="learner",
                   help="Learner method for classification", type=str, default='svm')
 parser.add_option("-o", "--output", dest="output",
@@ -42,7 +42,6 @@ Last changes:
 - poly as the default kernel
 - language trace activated (value 1)
 """
-
 
 
 
