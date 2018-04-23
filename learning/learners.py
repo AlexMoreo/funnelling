@@ -685,6 +685,7 @@ class PolylingualEmbeddingsClassifier:
 
         WEtr = np.vstack(WEtr)
         Ytr = np.vstack(Ytr)
+        self.embed_time = time.time() - tinit
 
         print('fitting the WE-space of shape={}'.format(WEtr.shape))
         self.model = MonolingualClassifier(base_learner=self.learner, parameters=self.c_parameters, n_jobs=self.n_jobs)
