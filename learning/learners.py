@@ -2,6 +2,8 @@ import numpy as np
 import scipy
 import time
 import sklearn
+
+from data.embeddings import WordEmbeddings
 from learning.singlelabelsvm import SingleLabelGaps
 from transformers.clesa import CLESA
 from transformers.riboc import RandomIndexingBoC
@@ -18,7 +20,7 @@ from sklearn.externals.joblib import Parallel, delayed
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.preprocessing import normalize
-
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 class FunnelingPolylingualClassifier:
     """
@@ -466,6 +468,7 @@ class JuxtaposedPolylingualClassifier:
         return self.model.best_params()
 
 
+
 class MonolingualClassifier:
 
     def __init__(self, base_learner, parameters=None, n_jobs=-1):
@@ -601,6 +604,111 @@ class ClassJuxtaEmbeddingPolylingualClassifier:
         XZ = csr_matrix(scipy.sparse.hstack([X * alpha, Z * (1.-alpha)]))
         normalize(XZ, norm='l2', axis=1, copy=False)
         return XZ
+
+class PolylingualEmbeddingsClassifier:
+    """
+    This classifier creates document embeddings by a tfidf weighted average of polylingual embeddings from the article
+    'Word Translation without Parallel Data'
+    url: https://github.com/facebookresearch/MUSE
+    """
+    def __init__(self, wordembeddings_path, learner, c_parameters=None, n_jobs=-1):
+        """
+        :param wordembeddings_path: the path to the directory containing the polylingual embeddings
+        :param learner: the learner
+        :param c_parameters: parameters for learner
+        :param n_jobs: the number of concurrent threads
+
+        """
+        self.wordembeddings_path = wordembeddings_path
+        self.learner = learner
+        self.c_parameters=c_parameters
+        self.n_jobs = n_jobs
+        self.model = None
+
+    def _embed(self, docs, lang, tfidf_vectorizer, method='tfidf', normalize=False):
+
+        V = tfidf_vectorizer.vocabulary_
+        Xweights = tfidf_vectorizer.transform(docs)
+
+        print('loading word embeddings for '+lang)
+        we = WordEmbeddings(self.wordembeddings_path, lang)
+
+        nD = len(docs)
+        doc_vecs = np.zeros((nD, we.dim()))
+
+        for i,doc in enumerate(docs):
+            print('\r\tcomplete {}%'.format(100*(i+1)/nD), end='')
+
+            # averaging with tfidf (summing each word only once, since the frequency is already controlled)
+            if method=='tfidf':
+                added=set()
+                for w in doc.split():
+                    if w not in added and w in we and w in V:
+                        doc_vecs[i] += (we[w] * Xweights[i, V[w]])
+                        added.add(w)
+
+            # averaging with idf (works much worse)
+            elif method == 'idf':
+                idf = tfidf_vectorizer.idf_
+                for w in doc:
+                    if w in we and w in V:
+                        doc_vecs[i] += (we[w] * idf[V[w]])
+        print()
+
+        if normalize: #works much better *without* normalizing
+            doc_vecs = doc_vecs/np.linalg.norm(doc_vecs,axis=1,keepdims=True)
+
+        return doc_vecs
+
+    def fit(self, lX, ly, single_label=False):
+        """
+
+        :param lX: a dictionary {language_label: [list of preprocessed documents]}
+        :param ly: a dictionary {language_label: ndarray of shape (ndocs, ncats) binary labels}
+        :param single_label: whether the matrix should be interpreted as a single-label problem (experimental)
+        :return: self
+        """
+        tinit = time.time()
+        self.single_label = single_label # experimental
+        langs = list(lX.keys())
+        self.lang_tfidf = {}
+        WEtr, Ytr = [], []
+        for lang in langs:
+            tfidf = TfidfVectorizer(sublinear_tf=True, use_idf=True) #text is already processed
+            docs = lX[lang]
+            tfidf.fit(docs)
+
+            WEtr.append(self._embed(docs, lang, tfidf))
+            Ytr.append(ly[lang])
+
+            self.lang_tfidf[lang] = tfidf
+
+        WEtr = np.vstack(WEtr)
+        Ytr = np.vstack(Ytr)
+
+        print('fitting the WE-space of shape={}'.format(WEtr.shape))
+        self.model = MonolingualClassifier(base_learner=self.learner, parameters=self.c_parameters, n_jobs=self.n_jobs)
+        self.model.fit(WEtr, Ytr, single_label)
+        self.time = time.time() - tinit
+        return self
+
+    def predict(self, lX):
+        """
+        :param lX: a dictionary {language_label: [list of preprocessed documents]}
+        """
+        assert self.model is not None, 'predict called before fit'
+        langs = list(lX.keys())
+        lWEte = {}
+        for lang in langs: # parallelizing this may consume too much memory
+            tfidf = self.lang_tfidf[lang]
+            WEte = self._embed(lX[lang], lang, tfidf)
+            lWEte[lang] = WEte
+
+        return _joblib_transform_multiling(self.model.predict, lWEte, n_jobs=self.n_jobs)
+
+    def best_params(self):
+        return self.model.best_params()
+
 
 
 def _sort_if_sparse(X):

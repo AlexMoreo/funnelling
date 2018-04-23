@@ -33,6 +33,8 @@ parser.add_option("-j", "--n_jobs", dest="n_jobs",type=int,
                   help="Number of parallel jobs (default is -1, all)", default=-1)
 parser.add_option("-s", "--set_c", dest="set_c",type=float,
                   help="Set the C parameter", default=1)
+parser.add_option("-w", "--we-path", dest="we_path",
+                  help="Path to the polylingual word embeddings (required only if --mode polyembeddings)")
 
 #note: Multinomial Naive-Bayes descargado: no está calibrado, no funciona con valores negativos, la adaptación a valores
 #reales es artificial
@@ -139,6 +141,14 @@ if __name__=='__main__':
                                                               final_learner=get_learner(calibrate=False),
                                                               alpha=0.5,
                                                               c_parameters=get_params(), y_parameters=get_params(), n_jobs=op.n_jobs)
+    elif op.mode == 'polyembeddings':
+        print('Learning Poly-lingual Word Embedding based Classifier')
+        classifier = PolylingualEmbeddingsClassifier(wordembeddings_path=op.we_path, learner=get_learner(calibrate=False),
+                                                     c_parameters=get_params(dense=False), n_jobs=op.n_jobs)
+    elif op.mode == 'polyembeddingsrbf':
+        print('Learning Poly-lingual Word Embedding based Classifier')
+        classifier = PolylingualEmbeddingsClassifier(wordembeddings_path=op.we_path, learner=get_learner(calibrate=False),
+                                                     c_parameters=get_params(dense=True), n_jobs=op.n_jobs)
 
     classifier.fit(data.lXtr(), data.lYtr())
 

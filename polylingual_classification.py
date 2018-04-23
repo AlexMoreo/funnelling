@@ -15,8 +15,6 @@ parser.add_option("-d", "--dataset", dest="dataset",
                   help="Path to the multilingual dataset processed and stored in .pickle format")
 parser.add_option("-m", "--mode", dest="mode",
                   help="Model to apply", type=str, default=None)
-parser.add_option("-l", "--learner", dest="learner",
-                  help="Learner method for classification", type=str, default='svm')
 parser.add_option("-o", "--output", dest="output",
                   help="Result file", type=str,  default='./results.csv')
 parser.add_option("-n", "--note", dest="note",
@@ -35,15 +33,14 @@ parser.add_option("-s", "--set_c", dest="set_c",type=float,
                   help="Set the C parameter", default=1)
 parser.add_option("-S", "--singlelabel", dest="singlelabel", action='store_true',
                   help="Treat the label matrix as a single-label one", default=False)
-
+parser.add_option("-w", "--we-path", dest="we_path",
+                  help="Path to the polylingual word embeddings (required only if --mode polyembeddings)")
 
 """
 Last changes:
 - poly as the default kernel
 - language trace activated (value 1)
 """
-
-
 
 #TODO: think about the neural-net extension
 #TODO: redo the juxtaclass, according to "Discriminative Methods for Multi-labeled Classification" and rename properly
@@ -54,41 +51,30 @@ Last changes:
 #note: really make_scorer(macroF1) seems to be better with the actual loss [tough not significantly]
 
 def get_learner(calibrate=False):
-    if op.learner == 'svm':
-        learner = SVC(kernel='linear', probability=calibrate, cache_size=1000, C=op.set_c, random_state=1)
-    elif op.learner == 'nb':
-        learner = MultinomialNB()
-    elif op.learner == 'lr':
-        learner = LogisticRegression(C=op.set_c)
-    return learner
+    return SVC(kernel='linear', probability=calibrate, cache_size=1000, C=op.set_c, random_state=1)
 
-def get_params(z_space=False):
+def get_params(dense=False):
     if not op.optimc:
         return None
 
-    c_range = [1e4, 1e3, 1e2, 1e1, 1]
-    if op.learner == 'svm':
-        params = [{'kernel': ['linear'], 'C': c_range}] if not z_space else [{'kernel': ['poly'], 'degree':[2], 'coef0':[0,1], 'gamma':['auto', 2.], 'C': c_range}] # [{'kernel': ['poly'], 'C': c_range, 'coef0':[0., 1.], 'gamma':['auto', 2.], 'degree':[3,4]}]
-        #, 'gamma' : [0.001, 0.01, 0.1, 1]
-    elif op.learner == 'nb':
-        params = [{'alpha': [1.0, .1, .05, .01, .001, 0.0]}]
-    elif op.learner == 'lr':
-        params = [{'C': c_range}]
-    return params
+    c_range = [1e4, 1e3, 1e2, 1e1, 1, 1e-1]
+    if not dense:
+        return [{'kernel': ['linear'], 'C': c_range}]
+    else:
+        return [{'kernel': ['rbf'], 'C': c_range}]
+        #[{'kernel': ['poly'], 'degree':[2], 'coef0':[0,1], 'gamma':['auto', 2.], 'C': c_range}]
+
 
 if __name__=='__main__':
     (op, args) = parser.parse_args()
 
     assert exists(op.dataset), 'Unable to find file '+str(op.dataset)
-    assert op.learner in ['svm', 'lr', 'nb'], 'unexpected learner'
     assert not (op.set_c != 1. and op.optimc), 'Parameter C cannot be defined along with optim_c option'
-    # assert op.mode in ['class','class-lang','class-10', 'class-10-nocal', 'naive', 'juxta', 'lri', 'lri-25k',
-    #                    'dci-lin', 'dci-pmi', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
 
     results = PolylingualClassificationResults(op.output)
 
     dataset_file = os.path.basename(op.dataset)
-    result_id = dataset_file+'_'+op.mode+op.learner+('_optimC' if op.optimc else ('_setc'+str(op.set_c) if op.set_c!=1. else ''))+\
+    result_id = dataset_file+'_'+op.mode+'_svm'+('_optimC' if op.optimc else ('_setc'+str(op.set_c) if op.set_c!=1. else ''))+\
                 ('_bin'+str(op.binary) if op.binary != -1 else '')+\
                 ('_langablation_'+str(op.lang_ablation) if op.lang_ablation else '')
 
@@ -113,14 +99,14 @@ if __name__=='__main__':
         classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                     final_learner=get_learner(calibrate=op.singlelabel),
                                                     #final_learner=get_learner(calibrate=True),  #changed
-                                                    parameters=None, z_parameters=get_params(z_space=True),
+                                                    parameters=None, z_parameters=get_params(dense=True),
                                                     n_jobs=op.n_jobs)
     elif op.mode == 'class-10':
         print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
         classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                     final_learner=get_learner(calibrate=op.singlelabel),
                                                     #final_learner=get_learner(calibrate=True),  # changed
-                                                    parameters=None, z_parameters=get_params(z_space=True),
+                                                    parameters=None, z_parameters=get_params(dense=True),
                                                     folded_projections=10,
                                                     n_jobs=op.n_jobs)
     elif op.mode == 'naive':
@@ -130,25 +116,23 @@ if __name__=='__main__':
         print('Learning Juxtaposed Poly-lingual Classifier')
         classifier = JuxtaposedPolylingualClassifier(base_learner=get_learner(), parameters=get_params(), n_jobs=op.n_jobs)
     elif op.mode == 'lri':
-        assert op.learner != 'nb', 'nb operates only on positive matrices'
         print('Learning Lightweight Random Indexing Poly-lingual Classifier')
         classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params(), n_jobs=op.n_jobs)
     elif op.mode == 'lri-25k':
-        assert op.learner != 'nb', 'nb operates only on positive matrices'
         print('Learning Lightweight Random Indexing Poly-lingual Classifier')
         classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params(), reduction=25000, n_jobs=op.n_jobs)
     elif op.mode == 'dci-lin':
-        assert op.learner!='nb', 'nb operates only on positive matrices'
         print('Learning Distributional Correspondence Indexing with Linear Poly-lingual Classifier')
-        classifier = DCIPolylingualClassifier(base_learner=get_learner(), dcf='linear', z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
+        classifier = DCIPolylingualClassifier(base_learner=get_learner(), dcf='linear', z_parameters=get_params(
+            dense=True), n_jobs=op.n_jobs)
     elif op.mode == 'dci-pmi':
-        assert op.learner != 'nb', 'nb operates only on positive matrices'
         print('Learning Distributional Correspondence Indexing with PMI Poly-lingual Classifier')
-        classifier = DCIPolylingualClassifier(base_learner=get_learner(), dcf='pmi', z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
+        classifier = DCIPolylingualClassifier(base_learner=get_learner(), dcf='pmi', z_parameters=get_params(
+            dense=True), n_jobs=op.n_jobs)
     elif op.mode == 'clesa':
         lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
         print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
-        classifier = CLESAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
+        classifier = CLESAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(dense=True), n_jobs=op.n_jobs)
     elif op.mode == 'upper':
         assert data.langs()==['en'], 'only English is expected in the upper bound call'
         print('Learning Upper bound as the English-only Classifier')
@@ -158,13 +142,23 @@ if __name__=='__main__':
         print('Learning Monolingual Class-Embedding in the English-only corpus')
         classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                     final_learner=get_learner(calibrate=False),
-                                                    parameters=None, z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
+                                                    parameters=None, z_parameters=get_params(dense=True), n_jobs=op.n_jobs)
     elif op.mode == 'juxtaclass':
         print('Learning Juxtaposed-Class-Embeddings Poly-lingual Classifier')
         classifier = ClassJuxtaEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                               final_learner=get_learner(calibrate=False),
                                                               alpha=0.5,
                                                               c_parameters=get_params(), y_parameters=get_params(), n_jobs=op.n_jobs)
+    elif op.mode == 'polyembeddings':
+        print('Learning Poly-lingual Word Embedding based Classifier')
+        classifier = PolylingualEmbeddingsClassifier(wordembeddings_path=op.we_path, learner=get_learner(calibrate=False),
+                                                     c_parameters=get_params(dense=False), n_jobs=op.n_jobs)
+    elif op.mode == 'polyembeddingsrbf':
+        print('Learning Poly-lingual Word Embedding based Classifier')
+        classifier = PolylingualEmbeddingsClassifier(wordembeddings_path=op.we_path, learner=get_learner(calibrate=False),
+                                                     c_parameters=get_params(dense=True), n_jobs=op.n_jobs)
+
+
 
     classifier.fit(data.lXtr(), data.lYtr(), single_label=op.singlelabel)
     l_eval = evaluate(classifier, data.lXte(), data.lYte())
@@ -176,6 +170,6 @@ if __name__=='__main__':
         print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (lang, macrof1, microf1))
         #results.add_row(result_id, op.mode, op.optimc, dataset_name, classifier.time, lang, macrof1, microf1, macrok, microk, notes=op.note)
         notes=op.note + ('C='+str(op.set_c) if op.set_c!=1 else '') + str(classifier.best_params() if op.optimc else '')
-        results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, op.binary, op.lang_ablation, classifier.time, lang, macrof1, microf1, macrok, microk, notes=notes)
+        results.add_row(result_id, op.mode, 'svm', op.optimc, data.dataset_name, op.binary, op.lang_ablation, classifier.time, lang, macrof1, microf1, macrok, microk, notes=notes)
 
     print('Averages: MF1, mF1, MK, mK', np.mean(np.array(metrics), axis=0))

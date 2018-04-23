@@ -1,6 +1,6 @@
 from os.path import join, exists
 from nltk.corpus import stopwords
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.preprocessing import MultiLabelBinarizer
 from data.reader.jrcacquis_reader import *
 from data.languages import lang_set, NLTK_LANGMAP, RCV2_LANGS_WITH_NLTK_STEMMING
@@ -12,6 +12,8 @@ import pickle
 import numpy as np
 from random import shuffle
 from sklearn.model_selection import train_test_split
+from scipy.sparse import issparse
+import itertools
 
 class MultilingualDataset:
 
@@ -38,10 +40,18 @@ class MultilingualDataset:
         data.sort_indexes()
         return data
 
+    @classmethod
+    def load_ids(cls, file):
+        data = pickle.load(open(file, 'rb'))
+        tr_ids = {lang:tr_ids for (lang,((_,_,tr_ids), (_,_,_))) in data.multiling_dataset.items()}
+        te_ids = {lang: te_ids for (lang, ((_, _, _), (_, _, te_ids))) in data.multiling_dataset.items()}
+        return tr_ids, te_ids
+
+
     def sort_indexes(self):
         for (lang, ((Xtr,_,_),(Xte,_,_))) in self.multiling_dataset.items():
-            Xtr.sort_indices()
-            Xte.sort_indices()
+            if issparse(Xtr): Xtr.sort_indices()
+            if issparse(Xte): Xte.sort_indices()
 
     def set_view(self, categories=None, languages=None):
         if categories is not None:
@@ -86,7 +96,8 @@ class MultilingualDataset:
     def show_dimensions(self):
         for (lang, ((Xtr, Ytr, IDtr), (Xte, Yte, IDte))) in self.multiling_dataset.items():
             if lang not in self.langs(): continue
-            print("Lang {}, Xtr={}, ytr={}, Xte={}, yte={}".format(lang, Xtr.shape, self.cat_view(Ytr).shape, Xte.shape, self.cat_view(Yte).shape))
+            if hasattr(Xtr, 'shape') and hasattr(Xte, 'shape'):
+                print("Lang {}, Xtr={}, ytr={}, Xte={}, yte={}".format(lang, Xtr.shape, self.cat_view(Ytr).shape, Xte.shape, self.cat_view(Yte).shape))
 
     def show_category_prevalences(self):
         #pass
@@ -141,6 +152,7 @@ def _preprocess(documents, lang):
     tokens = NLTKLemmaTokenizer(lang, verbose=True)
     sw = stopwords.words(NLTK_LANGMAP[lang])
     return [' '.join([w for w in tokens(doc) if w not in sw]) for doc in documents]
+
 
 
 # creates a MultilingualDataset where matrices lie in language-specific feature spaces
@@ -235,7 +247,7 @@ def build_juxtaposed_matrices(dataset_name, langs, training_docs, test_docs, lab
         #     Ytr = np.array(tr_labels).flatten()
         #     Yte = np.array(te_labels).flatten()
         #     assert len(Ytr) == Xtr.shape[0] and len(Yte) == Xte.shape[0], 'wrong size encountered in single-label fragment'
-        # else:
+        # else:home
         Ytr = mlb.transform(tr_labels)
         Yte = mlb.transform(te_labels)
         multiling_dataset.add(lang,Xtr,Ytr,Xte,Yte,tr_ID,te_ID)
@@ -249,6 +261,96 @@ def __years_to_str(years):
             return str(years[0])+'-'+str(years[-1])
         return str(years[0])
     return str(years)
+
+"""
+This method has been added a posteriori, to create document embeddings using the polylingual embeddings of the recent
+article 'Word Translation without Parallel Data'; basically, it takes oone of the splits and retrieves the RCV documents
+from the doc ids and then pickles an object (tr_docs, te_docs, label_names) in the outpath
+"""
+def retrieve_rcv_documents_from_dataset(datasetpath, rcv1_data_home, rcv2_data_home, outpath):
+
+    tr_ids, te_ids = MultilingualDataset.load_ids(datasetpath)
+    assert tr_ids.keys() == te_ids.keys(), 'inconsistent keys tr vs te'
+    langs = list(tr_ids.keys())
+
+    print('fetching the datasets')
+    rcv1_documents, labels_rcv1 = fetch_RCV1(rcv1_data_home, split='train')
+    rcv2_documents, labels_rcv2 = fetch_RCV2(rcv2_data_home, [l for l in langs if l != 'en'])
+
+    filter_by_categories(rcv1_documents, labels_rcv2)
+    filter_by_categories(rcv2_documents, labels_rcv1)
+
+    label_names = get_active_labels(rcv1_documents + rcv2_documents)
+    print('Active labels in RCV1/2 {}'.format(len(label_names)))
+
+    print('rcv1: {} train, {} test, {} categories'.format(len(rcv1_documents), 0, len(label_names)))
+    print('rcv2: {} documents'.format(len(rcv2_documents)), Counter([doc.lang for doc in rcv2_documents]))
+
+    all_docs = rcv1_documents + rcv2_documents
+    mlb = MultiLabelBinarizer()
+    mlb.fit([label_names])
+
+    dataset = MultilingualDataset()
+    for lang in langs:
+        analyzer = CountVectorizer(strip_accents='unicode', min_df=3,
+                                   stop_words=stopwords.words(NLTK_LANGMAP[lang])).build_analyzer()
+
+        Xtr,Ytr,IDtr = zip(*[(d.text,d.categories,d.id) for d in all_docs if d.lang == lang and d.id in tr_ids[lang]])
+        Xte,Yte,IDte = zip(*[(d.text,d.categories,d.id) for d in all_docs if d.lang == lang and d.id in te_ids[lang]])
+        Xtr = [' '.join(analyzer(d)) for d in Xtr]
+        Xte = [' '.join(analyzer(d)) for d in Xte]
+        Ytr = mlb.transform(Ytr)
+        Yte = mlb.transform(Yte)
+        dataset.add(lang, Xtr, Ytr, Xte, Yte, IDtr, IDte)
+
+    dataset.save(outpath)
+
+"""
+Same thing but for jrc
+"""
+def retrieve_jrc_documents_from_dataset(datasetpath, jrc_data_home, train_years, test_years, cat_policy, most_common_cat, outpath):
+
+    tr_ids, te_ids = MultilingualDataset.load_ids(datasetpath)
+    assert tr_ids.keys() == te_ids.keys(), 'inconsistent keys tr vs te'
+    langs = list(tr_ids.keys())
+
+    print('fetching the datasets')
+
+    cat_list = inspect_eurovoc(jrc_data_home, select=cat_policy)
+    training_docs, label_names = fetch_jrcacquis(langs=langs, data_path=jrc_data_home, years=train_years,
+                                                 cat_filter=cat_list, cat_threshold=1, parallel=None,
+                                                 most_frequent=most_common_cat)
+    test_docs, _ = fetch_jrcacquis(langs=langs, data_path=jrc_data_home, years=test_years, cat_filter=label_names,
+                                   parallel='force')
+
+
+    def filter_by_id(doclist, ids):
+        ids_set = frozenset(itertools.chain.from_iterable(ids.values()))
+        return [x for x in doclist if (x.parallel_id+'__'+x.id) in ids_set]
+
+    training_docs = filter_by_id(training_docs, tr_ids)
+    test_docs = filter_by_id(test_docs, te_ids)
+
+    print('jrc: {} train, {} test, {} categories'.format(len(training_docs), len(test_docs), len(label_names)))
+
+    mlb = MultiLabelBinarizer()
+    mlb.fit([label_names])
+
+    dataset = MultilingualDataset()
+    for lang in langs:
+        analyzer = CountVectorizer(strip_accents='unicode', min_df=3,
+                                   stop_words=stopwords.words(NLTK_LANGMAP[lang])).build_analyzer()
+
+        Xtr,Ytr,IDtr = zip(*[(d.text,d.categories,d.parallel_id+'__'+d.id) for d in training_docs if d.lang == lang])
+        Xte,Yte,IDte = zip(*[(d.text,d.categories,d.parallel_id+'__'+d.id) for d in test_docs if d.lang == lang])
+        Xtr = [' '.join(analyzer(d)) for d in Xtr]
+        Xte = [' '.join(analyzer(d)) for d in Xte]
+        Ytr = mlb.transform(Ytr)
+        Yte = mlb.transform(Yte)
+        dataset.add(lang, Xtr, Ytr, Xte, Yte, IDtr, IDte)
+
+    dataset.save(outpath)
+
 
 #generates the "feature-independent" and the "yuxtaposed" datasets
 def prepare_jrc_datasets(jrc_data_home, wiki_data_home, langs, train_years, test_years, cat_policy, most_common_cat=-1, max_wiki=5000, single_fragment=False, run=0):
@@ -449,8 +551,8 @@ if __name__=='__main__':
     RCV1_PATH = '/media/moreo/1TB Volume/Datasets/RCV1-v2/unprocessed_corpus'
     RCV2_PATH = '/media/moreo/1TB Volume/Datasets/RCV2'
     langs = lang_set['JRC_NLTK']
-    rcv1_leave_topics = fetch_topic_hierarchy("/media/moreo/1TB Volume/Datasets/RCV1-v2/rcv1.topics.hier.orig",
-                                              topics='leaves')
+    # rcv1_leave_topics = fetch_topic_hierarchy("/media/moreo/1TB Volume/Datasets/RCV1-v2/rcv1.topics.hier.orig",
+    #                                           topics='leaves')
 
     # prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
     #                      train_for_lang=1000,
@@ -462,23 +564,31 @@ if __name__=='__main__':
     # sys.exit()
 
     for run in range(0,10):
-        print('Building JRC-Acquis datasets...')
-        prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006],
-                             cat_policy='leaves', most_common_cat=300, single_fragment=True, run=run)
-        prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006], cat_policy='all', most_common_cat=300, run=run)
+        # print('Building JRC-Acquis datasets...')
+        # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006],
+        #                      cat_policy='leaves', most_common_cat=300, single_fragment=True, run=run)
+        # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006], cat_policy='all', most_common_cat=300, run=run)
         # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1986, 2006)), test_years=[2006], cat_policy='broadest')
         # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1986, 2006)), test_years=[2006], cat_policy='all')
 
-        print('Building RCV1-v2/2 datasets...')
-        prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
-                             train_for_lang=1000,
-                             test_for_lang=1000,
-                             max_wiki=5000,
-                             single_fragment_for=rcv1_leave_topics, run=run)
-        prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
-                             train_for_lang=1000,
-                             test_for_lang=1000,
-                             max_wiki=5000, run=run)
+        print('Building RCV1-v2/2 datasets run',run)
+        # prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
+        #                      train_for_lang=1000,
+        #                      test_for_lang=1000,
+        #                      max_wiki=5000,
+        #                      single_fragment_for=rcv1_leave_topics, run=run)
+        # prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
+        #                      train_for_lang=1000,
+        #                      test_for_lang=1000,
+        #                      max_wiki=5000, run=run)
+        datasetpath = join(RCV2_PATH,'rcv1-2_nltk_trByLang1000_teByLang1000_processed_run{}.pickle'.format(run))
+        outpath = join(RCV2_PATH, 'rcv1-2_doclist_trByLang1000_teByLang1000_processed_run{}.pickle'.format(run))
+        #retrieve_rcv_documents_from_dataset(datasetpath, RCV1_PATH, RCV2_PATH, outpath)
+
+        datasetpath = join(JRC_DATAPATH, 'jrc_nltk_1958-2005vs2006_all_top300_noparallel_processed_run{}.pickle'.format(run))
+        outpath = join(JRC_DATAPATH, 'jrc_doclist_1958-2005vs2006_all_top300_noparallel_processed_run{}.pickle'.format(run))
+        retrieve_jrc_documents_from_dataset(datasetpath, JRC_DATAPATH, train_years=list(range(1958, 2006)), test_years=[2006], cat_policy='all', most_common_cat=300, outpath=outpath)
+
 
     #print('Building Reuters-21578 dataset...')
     #prepare_reuters21578(preprocess=False)
