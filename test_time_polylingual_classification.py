@@ -156,7 +156,7 @@ if __name__=='__main__':
         tini = time.time()
         ly_ = classifier.predict(data.lXte())
         test_time = time.time() - tini
-        nDocs = sum([lX.shape[0] for lX in data.lXte().values()])
+        nDocs = sum([lX.shape[0] if hasattr(lX,'shape') else len(lX) for lX in data.lXte().values()])
         ftime.write(op.mode+'\t'+data.dataset_name+'\t'+op.learner+'\t'+str(test_time*1./nDocs)+'\n')
 
     print('Done!')
