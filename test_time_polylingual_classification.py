@@ -144,11 +144,11 @@ if __name__=='__main__':
     elif op.mode == 'polyembeddings':
         print('Learning Poly-lingual Word Embedding based Classifier')
         classifier = PolylingualEmbeddingsClassifier(wordembeddings_path=op.we_path, learner=get_learner(calibrate=False),
-                                                     c_parameters=get_params(dense=False), n_jobs=op.n_jobs)
+                                                     c_parameters=get_params(z_space=False), n_jobs=op.n_jobs)
     elif op.mode == 'polyembeddingsrbf':
         print('Learning Poly-lingual Word Embedding based Classifier')
         classifier = PolylingualEmbeddingsClassifier(wordembeddings_path=op.we_path, learner=get_learner(calibrate=False),
-                                                     c_parameters=get_params(dense=True), n_jobs=op.n_jobs)
+                                                     c_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
 
     classifier.fit(data.lXtr(), data.lYtr())
 
