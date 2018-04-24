@@ -98,7 +98,7 @@ if __name__=='__main__':
 
             print('Language {}, reduction {}, shape {}:'.format(lang, tr_proportion, Xtr.shape))
             data.show_dimensions()
-            data.show_category_prevalences()
+            #data.show_category_prevalences()
 
             if op.mode == 'class':
                 print('Learning Class-Embedding Poly-lingual Classifier')

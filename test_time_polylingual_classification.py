@@ -156,12 +156,14 @@ if __name__=='__main__':
         tini = time.time()
         ly_ = classifier.predict(data.lXte())
         test_time = time.time() - tini
-        #nDocs = sum([lX.shape[0] if hasattr(lX,'shape') else len(lX) for lX in data.lXte().values()])
-        #ftime.write(op.mode+'\t'+data.dataset_name+'\t'+op.learner+'\t'+str(test_time*1./nDocs)+'\n')
         if op.mode.startswith('polyembeddings'):
             ftime.write(op.mode + '\t' + op.dataset + '\t' + op.learner + '\t' + str(classifier.embed_time) + '\tembed\n')
             ftime.write(op.mode + '\t' + op.dataset + '\t' + op.learner + '\t' + str(classifier.time - classifier.embed_time) + '\ttrain\n')
             ftime.write(op.mode + '\t' + op.dataset + '\t' + op.learner + '\t' + str(test_time) + '\ttest\n')
+        else:
+            # nDocs = sum([lX.shape[0] if hasattr(lX,'shape') else len(lX) for lX in data.lXte().values()])
+            ftime.write(op.mode+'\t'+data.dataset_name+'\t'+op.learner+'\t'+str(test_time)+'\n')
+
 
 
     print('Done!')
