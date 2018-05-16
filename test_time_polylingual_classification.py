@@ -42,7 +42,7 @@ parser.add_option("-w", "--we-path", dest="we_path",
 
 def get_learner(calibrate=False):
     if op.learner == 'svm':
-        learner = SVC(kernel='linear', probability=calibrate, cache_size=1000, C=op.set_c)
+        learner = SVC(kernel='rbf', probability=calibrate, cache_size=1000, C=op.set_c)
     elif op.learner == 'nb':
         learner = MultinomialNB()
     elif op.learner == 'lr':
