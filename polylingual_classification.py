@@ -97,14 +97,14 @@ if __name__=='__main__':
 
     if op.mode == 'class':
         print('Learning Class-Embedding Poly-lingual Classifier')
-        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=False if args.nocal else True),
+        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=False if op.nocal else True),
                                                     final_learner=get_learner(calibrate=op.singlelabel),
                                                     #final_learner=get_learner(calibrate=True),  #changed
                                                     parameters=None, z_parameters=get_params(dense=True),
                                                     n_jobs=op.n_jobs)
     elif op.mode == 'class-10':
         print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
-        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=False if args.nocal else True),
+        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=False if op.nocal else True),
                                                     final_learner=get_learner(calibrate=op.singlelabel),
                                                     #final_learner=get_learner(calibrate=True),  # changed
                                                     parameters=None, z_parameters=get_params(dense=True),
@@ -164,8 +164,8 @@ if __name__=='__main__':
     classifier.fit(data.lXtr(), data.lYtr(), single_label=op.singlelabel)
     l_eval = evaluate(classifier, data.lXte(), data.lYte())
 
-    if args.nocal:
-        op.mode += '-nocal' 
+    if op.nocal:
+        op.mode += '-nocal'
 
     metrics  = []
     for lang in data.langs():
