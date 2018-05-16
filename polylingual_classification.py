@@ -35,6 +35,8 @@ parser.add_option("-S", "--singlelabel", dest="singlelabel", action='store_true'
                   help="Treat the label matrix as a single-label one", default=False)
 parser.add_option("-w", "--we-path", dest="we_path",
                   help="Path to the polylingual word embeddings (required only if --mode polyembeddings)")
+parser.add_option("--nocal", dest="nocal", action='store_true',
+                  help="Avoids calibration in the base classifiers (only for class model)", default=False)
 
 """
 Last changes:
@@ -44,7 +46,6 @@ Last changes:
 
 #TODO: think about the neural-net extension
 #TODO: redo the juxtaclass, according to "Discriminative Methods for Multi-labeled Classification" and rename properly
-#TODO: calibration single-labelotra
 
 #note: Multinomial Naive-Bayes descartado: no está calibrado, no funciona con valores negativos, la adaptación a valores
 #reales es artificial
@@ -96,14 +97,14 @@ if __name__=='__main__':
 
     if op.mode == 'class':
         print('Learning Class-Embedding Poly-lingual Classifier')
-        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
+        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=False if args.nocal else True),
                                                     final_learner=get_learner(calibrate=op.singlelabel),
                                                     #final_learner=get_learner(calibrate=True),  #changed
                                                     parameters=None, z_parameters=get_params(dense=True),
                                                     n_jobs=op.n_jobs)
     elif op.mode == 'class-10':
         print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
-        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
+        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=False if args.nocal else True),
                                                     final_learner=get_learner(calibrate=op.singlelabel),
                                                     #final_learner=get_learner(calibrate=True),  # changed
                                                     parameters=None, z_parameters=get_params(dense=True),
@@ -162,6 +163,9 @@ if __name__=='__main__':
 
     classifier.fit(data.lXtr(), data.lYtr(), single_label=op.singlelabel)
     l_eval = evaluate(classifier, data.lXte(), data.lYte())
+
+    if args.nocal:
+        op.mode += '-nocal' 
 
     metrics  = []
     for lang in data.langs():
