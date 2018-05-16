@@ -2,7 +2,6 @@ import numpy as np
 import scipy
 import time
 import sklearn
-
 from data.embeddings import WordEmbeddings
 from learning.singlelabelsvm import SingleLabelGaps
 from transformers.clesa import CLESA
@@ -49,6 +48,20 @@ class FunnelingPolylingualClassifier:
         self.language_trace = language_trace
         self.norm = norm
         self.n_jobs = n_jobs
+        self.probability = auxiliar_learner.probability
+
+    def _projection(self, doc_projector, lX):
+        """
+        Decides the projection function to be applied; predict_proba if the base classifiers are calibrated or
+        decision_function if otherwise
+        :param doc_projector: the document projector (a NaivePolylingualClassifier)
+        :param lX: {lang:matrix} to train
+        :return: the projection, applied with predict_proba or decision_function
+        """
+        if self.probability:
+            return doc_projector.predict_proba(lX)
+        else:
+            return doc_projector.decision_function(lX)
 
     def _get_zspace(self, lXtr, lYtr, lXproj=None, lYproj=None):
         """
@@ -72,11 +85,11 @@ class FunnelingPolylingualClassifier:
 
         print('projecting the documents')
         langs = list(lXtr.keys())
-        lZ = self.doc_projector.predict_proba(lXproj)
+        lZ = self._projection(self.doc_projector, lXproj)
 
         if repair_empty_folds:
             empty_categories = self.doc_projector.empty_categories
-            lZ_bu = self.doc_projector_bu.predict_proba(lXproj)
+            lZ_bu = self._projection(self.doc_projector_bu, lXproj)
 
             for lang in langs:
                 repair = empty_categories[lang]
@@ -158,7 +171,7 @@ class FunnelingPolylingualClassifier:
         :return: a dictionary of predictions
         """
         assert self.single_label or self.model is not None, 'predict called before fit'
-        lZ = self.doc_projector.predict_proba(lX)
+        lZ = self._projection(self.doc_projector, lX)
 
         if self.language_trace:
             lZ = self._extend_with_lang_trace(lZ)
@@ -193,6 +206,7 @@ class NaivePolylingualClassifier:
         self.parameters = parameters
         self.model = None
         self.n_jobs = n_jobs
+        self.probability = base_learner.probability
 
     def fit(self, lX, ly, single_label=False):
         """
@@ -477,6 +491,7 @@ class MonolingualClassifier:
         self.model = None
         self.n_jobs = n_jobs
         self.best_params_ = None
+        self.probability = base_learner.probability
 
     def fit(self, X, y, single_label=False):
         if X.shape[0] == 0:
@@ -536,6 +551,7 @@ class MonolingualClassifier:
 
     def best_params(self):
         return self.best_params_
+
 
 class TrivialRejector:
     def fit(self, X, y):
