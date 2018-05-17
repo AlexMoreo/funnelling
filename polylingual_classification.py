@@ -35,8 +35,12 @@ parser.add_option("-S", "--singlelabel", dest="singlelabel", action='store_true'
                   help="Treat the label matrix as a single-label one", default=False)
 parser.add_option("-w", "--we-path", dest="we_path",
                   help="Path to the polylingual word embeddings (required only if --mode polyembeddings)")
-parser.add_option("--nocal", dest="nocal", action='store_true',
-                  help="Avoids calibration in the base classifiers (only for class model)", default=False)
+parser.add_option("--calmode", dest="calmode",
+                  help="Calibration mode for the base classifiers (only for class-based models). Valid ones are"
+                       "'cal' (default, calibrates the base classifiers and use predict_proba to project), "
+                       "'nocal' (does not calibrate, use the decision_function to project)"
+                       "'sigmoid' (does not calibrate, use the sigmoid of the decision function to project)",
+                  default='cal')
 
 """
 Last changes:
@@ -63,7 +67,6 @@ def get_params(dense=False):
         return [{'kernel': ['linear'], 'C': c_range}]
     else:
         return [{'kernel': ['rbf'], 'C': c_range}]
-        #[{'kernel': ['poly'], 'degree':[2], 'coef0':[0,1], 'gamma':['auto', 2.], 'C': c_range}]
 
 
 if __name__=='__main__':
@@ -95,20 +98,21 @@ if __name__=='__main__':
     data.show_dimensions()
     #data.show_category_prevalences()
 
+    calibrate = (op.calmode == 'cal')
     if op.mode == 'class':
         print('Learning Class-Embedding Poly-lingual Classifier')
-        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=False if op.nocal else True),
+        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=calibrate),
                                                     final_learner=get_learner(calibrate=op.singlelabel),
-                                                    #final_learner=get_learner(calibrate=True),  #changed
-                                                    parameters=None, z_parameters=get_params(dense=True),
+                                                    base_parameters=None, meta_parameters=get_params(dense=True),
+                                                    calmode=op.calmode,
                                                     n_jobs=op.n_jobs)
     elif op.mode == 'class-10':
         print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
-        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=False if op.nocal else True),
+        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=calibrate),
                                                     final_learner=get_learner(calibrate=op.singlelabel),
-                                                    #final_learner=get_learner(calibrate=True),  # changed
-                                                    parameters=None, z_parameters=get_params(dense=True),
+                                                    base_parameters=None, meta_parameters=get_params(dense=True),
                                                     folded_projections=10,
+                                                    calmode=op.calmode,
                                                     n_jobs=op.n_jobs)
     elif op.mode == 'naive':
         print('Learning Naive Poly-lingual Classifier')
@@ -124,12 +128,10 @@ if __name__=='__main__':
         classifier = LRIPolylingualClassifier(base_learner=get_learner(), parameters=get_params(), reduction=25000, n_jobs=op.n_jobs)
     elif op.mode == 'dci-lin':
         print('Learning Distributional Correspondence Indexing with Linear Poly-lingual Classifier')
-        classifier = DCIPolylingualClassifier(base_learner=get_learner(), dcf='linear', z_parameters=get_params(
-            dense=True), n_jobs=op.n_jobs)
+        classifier = DCIPolylingualClassifier(base_learner=get_learner(), dcf='linear', z_parameters=get_params(dense=True), n_jobs=op.n_jobs)
     elif op.mode == 'dci-pmi':
         print('Learning Distributional Correspondence Indexing with PMI Poly-lingual Classifier')
-        classifier = DCIPolylingualClassifier(base_learner=get_learner(), dcf='pmi', z_parameters=get_params(
-            dense=True), n_jobs=op.n_jobs)
+        classifier = DCIPolylingualClassifier(base_learner=get_learner(), dcf='pmi', z_parameters=get_params(dense=True), n_jobs=op.n_jobs)
     elif op.mode == 'clesa':
         lW = pickle.load(open(op.dataset.replace('.pickle','.wiki.pickle'), 'rb'))
         print('Learning Cross-Lingual Explicit Semantic Analysis Poly-lingual Classifier')
@@ -143,7 +145,7 @@ if __name__=='__main__':
         print('Learning Monolingual Class-Embedding in the English-only corpus')
         classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                     final_learner=get_learner(calibrate=False),
-                                                    parameters=None, z_parameters=get_params(dense=True), n_jobs=op.n_jobs)
+                                                    base_parameters=None, meta_parameters=get_params(dense=True), n_jobs=op.n_jobs)
     elif op.mode == 'juxtaclass':
         print('Learning Juxtaposed-Class-Embeddings Poly-lingual Classifier')
         classifier = ClassJuxtaEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
@@ -164,15 +166,14 @@ if __name__=='__main__':
     classifier.fit(data.lXtr(), data.lYtr(), single_label=op.singlelabel)
     l_eval = evaluate(classifier, data.lXte(), data.lYte())
 
-    if op.nocal:
-        op.mode += '-nocal'
+    if op.calmode!='cal': # the default value does not add a postfix to the method name
+        op.mode += op.calmode
 
     metrics  = []
     for lang in data.langs():
         macrof1, microf1, macrok, microk = l_eval[lang]
         metrics.append([macrof1, microf1, macrok, microk])
         print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (lang, macrof1, microf1))
-        #results.add_row(result_id, op.mode, op.optimc, dataset_name, classifier.time, lang, macrof1, microf1, macrok, microk, notes=op.note)
         notes=op.note + ('C='+str(op.set_c) if op.set_c!=1 else '') + str(classifier.best_params() if op.optimc else '')
         results.add_row(result_id, op.mode, 'svm', op.optimc, data.dataset_name, op.binary, op.lang_ablation, classifier.time, lang, macrof1, microf1, macrok, microk, notes=notes)
 

@@ -27,28 +27,33 @@ class FunnelingPolylingualClassifier:
     decision score phi_l(d,ci) of an auxiliar classifier phi_l trained on category ci for documents in language l;
     then trains one single classifier for all documents in this space, irrespective of their originary language
     """
-    def __init__(self, auxiliar_learner, final_learner, parameters=None, z_parameters=None, folded_projections=1, language_trace=False, norm=False, n_jobs=-1):
+    def __init__(self, auxiliar_learner, final_learner, base_parameters=None, meta_parameters=None, folded_projections=1,
+                 language_trace=False, norm=False, calmode='cal', n_jobs=-1):
         """
-        :param parameters: parameters for the learner in the doc_projector
-        :param z_parameters: parameters for the learner in the z-space
+        :param base_parameters: parameters for the learner in the doc_projector
+        :param meta_parameters: parameters for the learner in the z-space
         :param folded_predictions: if 1 then the model trains the auxiliar classifiers with all training data and
+        :param calmode: 'cal' to calibrate the base classifiers, 'nocal' to use the decision_function instead, or
+        'sigmoid' to use the sigmoid of the decision_function
         projects the data before training the final classifier; if greater than one, the training set is split in as
         many folds as indicated, and the projected space is composed by concatenating each fold prediction based on
         models trained on the remaining folds. This should increase the generality of the space to unseen data.
         """
         assert folded_projections>0, "positive number of folds expected"
+        assert calmode in ['cal','nocal','sigmoid'], 'unknown calmode'
+        assert calmode!='cal' or auxiliar_learner.probability, 'calmode=cal requires the learner to have probability=True'
 
         self.auxiliar_learner = auxiliar_learner
         self.final_learner = final_learner
-        self.parameters=parameters
-        self.z_parameters = z_parameters
+        self.parameters=base_parameters
+        self.z_parameters = meta_parameters
         self.doc_projector = NaivePolylingualClassifier(self.auxiliar_learner, self.parameters, n_jobs=n_jobs)
         self.doc_projector_bu = NaivePolylingualClassifier(self.auxiliar_learner, self.parameters, n_jobs=n_jobs)
         self.folded_projections = folded_projections
         self.language_trace = language_trace
         self.norm = norm
         self.n_jobs = n_jobs
-        self.probability = auxiliar_learner.probability
+        self.calmode = calmode
 
     def _projection(self, doc_projector, lX):
         """
@@ -58,10 +63,15 @@ class FunnelingPolylingualClassifier:
         :param lX: {lang:matrix} to train
         :return: the projection, applied with predict_proba or decision_function
         """
-        if self.probability:
+        if self.calmode=='cal':
             return doc_projector.predict_proba(lX)
         else:
-            return doc_projector.decision_function(lX)
+            l_decision_scores = doc_projector.decision_function(lX)
+            if self.calmode=='sigmoid':
+                def sigmoid(x): return 1 / (1 + np.exp(-x))
+                for lang in l_decision_scores.keys():
+                    l_decision_scores[lang] = sigmoid(l_decision_scores[lang])
+            return l_decision_scores
 
     def _get_zspace(self, lXtr, lYtr, lXproj=None, lYproj=None):
         """
@@ -206,7 +216,6 @@ class NaivePolylingualClassifier:
         self.parameters = parameters
         self.model = None
         self.n_jobs = n_jobs
-        self.probability = base_learner.probability
 
     def fit(self, lX, ly, single_label=False):
         """
@@ -491,7 +500,6 @@ class MonolingualClassifier:
         self.model = None
         self.n_jobs = n_jobs
         self.best_params_ = None
-        self.probability = base_learner.probability
 
     def fit(self, X, y, single_label=False):
         if X.shape[0] == 0:
