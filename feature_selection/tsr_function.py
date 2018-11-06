@@ -179,23 +179,11 @@ def get_supervised_matrix(coocurrence_matrix, label_matrix, n_jobs=-1):
     def nonzero_set(matrix, col):
         return set(matrix[:, col].nonzero()[0])
 
-    #print("\tGetting the non-zero sets F")
-        #tini=time.time()
     if isinstance(coocurrence_matrix, csr_matrix):
         coocurrence_matrix = csc_matrix(coocurrence_matrix)
-    #coocurrence_matrix = coocurrence_matrix.todense()
     feature_sets = [nonzero_set(coocurrence_matrix, f) for f in range(nF)]
-    #print time.time()-tini
-    #tini = time.time()
-    #print("\tGetting the non-zero sets C")
     category_sets = [nonzero_set(label_matrix, c) for c in range(nC)]
-    #cell_matrix = [[feature_label_contingency_table(category_sets[c], feature_sets[f], nD) for f in range(nF)] for c in range(nC)]
-    #print time.time() - tini
-    #tini = time.time()
-    #print("\tGetting the matrix")
     cell_matrix = Parallel(n_jobs=n_jobs, backend="threading")(delayed(category_tables)(feature_sets, category_sets, c, nD, nF) for c in range(nC))
-    #cell_matrix = np.transpose(np.array(cell_matrix)).reshape((nF,nC))
-    #print time.time() - tini
     return np.array(cell_matrix)
 
 # obtains the matrix T where Tcf=tsr(f,c) is the tsr score for category c and feature f

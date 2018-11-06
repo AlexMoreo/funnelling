@@ -1,6 +1,7 @@
 import util.disable_sklearn_warnings
 import os,sys
 from dataset_builder import MultilingualDataset
+from feature_selection.round_robin import RoundRobin
 from learning.learners import *
 from util.evaluation import *
 from optparse import OptionParser
@@ -98,6 +99,11 @@ if __name__=='__main__':
     data.show_dimensions()
     #data.show_category_prevalences()
 
+    lXtr = data.lXtr()
+    lytr = data.lYtr()
+    lXte = data.lXte()
+    lyte = data.lYte()
+
     calibrate = (op.calmode == 'cal')
     if op.mode == 'class':
         print('Learning Class-Embedding Poly-lingual Classifier')
@@ -160,11 +166,37 @@ if __name__=='__main__':
         print('Learning Poly-lingual Word Embedding based Classifier')
         classifier = PolylingualEmbeddingsClassifier(wordembeddings_path=op.we_path, learner=get_learner(calibrate=False),
                                                      c_parameters=get_params(dense=True), n_jobs=op.n_jobs)
+    elif op.mode == 'kcca':
+        lW = pickle.load(open(op.dataset.replace('.pickle', '.wiki.pickle'), 'rb'))
+
+
+        # print('drastic reduction in the W SPACE')
+        lW = {l:W[:999] for l,W in lW.items()}
+        # #
+        #
+        #
+        # lW = {'es':lW['es'], 'en':lW['en']}
+        # lXtr = {'es': lXtr['es'], 'en': lXtr['en']}
+        # lytr = {'es': lytr['es'], 'en': lytr['en']}
+        # lXte = {'es': lXte['es'], 'en': lXte['en']}
+        # lyte = {'es': lyte['es'], 'en': lyte['en']}
+
+        # lFS = {l: RoundRobin(k=999) for l in lW.keys()}
+        # lXtr = {l: lFS[l].fit_transform(lXtr[l], lytr[l]) for l in lW.keys()}
+        # lXte = {l: lFS[l].transform(lXte[l]) for l in lW.keys()}
+        # lW = {l: lFS[l].transform(lW[l]) for l in lW.keys()}
+
+
+        print('Learning KCCA-based Classifier')
+        classifier = KCCAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(dense=True),
+                                                n_jobs=op.n_jobs)
 
 
 
-    classifier.fit(data.lXtr(), data.lYtr(), single_label=op.singlelabel)
-    l_eval = evaluate(classifier, data.lXte(), data.lYte())
+
+
+    classifier.fit(lXtr, lytr, single_label=op.singlelabel)
+    l_eval = evaluate(classifier, lXte, lyte)
 
     if op.calmode!='cal': # the default value does not add a postfix to the method name
         op.mode += op.calmode

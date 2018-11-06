@@ -47,7 +47,7 @@ def funnelling_classify_and_test(variant_name, ablated):
     print('Learning Class-Embedding Poly-lingual Classifier')
     classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                 final_learner=get_learner(calibrate=False),
-                                                parameters=None, z_parameters=get_params(z_space=True),
+                                                base_parameters=None, meta_parameters=get_params(z_space=True),
                                                 n_jobs=op.n_jobs)
     classifier.fit(data.lXtr(), data.lYtr())
 
@@ -90,7 +90,7 @@ def evaluate_posterior_probs(variant_name):
     print('Learning Class-Embedding Poly-lingual Classifier')
     classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                 final_learner=get_learner(calibrate=False),
-                                                parameters=None, z_parameters=get_params(z_space=True),
+                                                base_parameters=None, meta_parameters=get_params(z_space=True),
                                                 n_jobs=op.n_jobs)
 
     classifier.fit(data.lXtr(), data.lYtr())
@@ -113,6 +113,21 @@ def evaluate_posterior_probs(variant_name):
                         classifier.time, lang, macrof1, microf1, macrok, microk, notes=notes+" 100%examples in train")
 
 
+def reduce_lang_train_data(data, langs, tr_proportion=0.1):
+    if not isinstance(langs, list):
+        langs = [langs]
+
+    for train_lang in langs:
+        ((Xtr, Ytr, tr_ids), (Xte, Yte, te_ids)) = data.multiling_dataset[train_lang]
+        Xtr, Ytr = shuffle(Xtr, Ytr, random_state=0)
+        Xtr.sort_indices()
+        nD = Xtr.shape[0]
+        ndocs = int(nD * tr_proportion)
+        Xtr = Xtr[:ndocs]
+        Ytr = Ytr[:ndocs]
+        data.multiling_dataset[train_lang] = ((Xtr, Ytr, tr_ids), (Xte, Yte, te_ids))
+    return data
+
 if __name__=='__main__':
     (op, args) = parser.parse_args()
 
@@ -126,23 +141,19 @@ if __name__=='__main__':
 
     data = MultilingualDataset.load(op.dataset)
     langs = list(data.langs())
+    #evaluate_posterior_probs('Fun(tat)-PostPr')
 
-    evaluate_posterior_probs('Fun(tat)-PostPr')
+
+    data = reduce_lang_train_data(data, langs, tr_proportion=0.1)
+    evaluate_posterior_probs('Fun(tat)-PostPr10')
+    sys.exit(0)
 
     for i,train_lang in enumerate(langs):
         print('Starting with language {} ({}/{})'.format(train_lang,i+1,len(langs)))
         data = MultilingualDataset.load(op.dataset)
 
         # reduce the training set of the selected language to 10% of its content
-        tr_proportion = 0.1
-        ((Xtr, Ytr, tr_ids), (Xte, Yte, te_ids)) = data.multiling_dataset[train_lang]
-        Xtr, Ytr = shuffle(Xtr, Ytr, random_state=0)
-        Xtr.sort_indices()
-        nD = Xtr.shape[0]
-        ndocs = int(nD * tr_proportion)
-        Xtr = Xtr[:ndocs]
-        Ytr = Ytr[:ndocs]
-        data.multiling_dataset[train_lang] = ((Xtr, Ytr, tr_ids), (Xte, Yte, te_ids))
+        data = reduce_lang_train_data(data, train_lang, tr_proportion = 0.1)
 
         funnelling_classify_and_test('fun(tat)-all-langs', ablated='none')
 

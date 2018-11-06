@@ -63,7 +63,7 @@ if __name__=='__main__':
     print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
     classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                 final_learner=get_learner(calibrate=False),
-                                                parameters=None, z_parameters=get_params(z_space=True),
+                                                base_parameters=None, meta_parameters=get_params(z_space=True),
                                                 folded_projections=folds)
 
     print('Obtaining the z-space')

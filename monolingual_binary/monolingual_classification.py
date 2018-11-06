@@ -132,20 +132,16 @@ if __name__=='__main__':
                                                               c_parameters=get_params(), y_parameters=get_params(), n_jobs=op.n_jobs)
 
     languages = data.langs()
-    for i,lang1 in enumerate(languages):
-        for j in range(i+1, len(languages)):
-            lang2 = languages[j]
-            print('Bilingual: ' + lang1 + "-" + lang2)
-            data.set_view(languages=[lang1, lang2])
-            classifier.fit(data.lXtr(), data.lYtr())
-            l_eval = evaluate(classifier, data.lXte(), data.lYte())
+    for lang in languages:
+        print('Monolingual: ' + lang)
+        data.set_view(languages=[lang])
+        classifier.fit(data.lXtr(), data.lYtr())
+        l_eval = evaluate(classifier, data.lXte(), data.lYte())
 
-            for eval_lang in [lang1, lang2]:
-                macrof1, microf1, macrok, microk = l_eval[eval_lang]
-                print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (eval_lang, macrof1, microf1))
-                notes = op.note + ('C=' + str(op.set_c) if op.set_c != 1 else '') + str(classifier.best_params() if op.optimc else '')
-                train_added_lang = lang1 if eval_lang==lang2 else lang2
-                results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, -1, train_added_lang, classifier.time, eval_lang, macrof1, microf1, macrok, microk, notes=notes)
+        macrof1, microf1, macrok, microk = l_eval[lang]
+        print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (lang, macrof1, microf1))
+        notes = op.note + ('C=' + str(op.set_c) if op.set_c != 1 else '') + str(classifier.best_params() if op.optimc else '')
+        results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, -1, lang, classifier.time, lang, macrof1, microf1, macrok, microk, notes=notes)
 
 
 

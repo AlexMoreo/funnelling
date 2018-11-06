@@ -4,6 +4,8 @@ from dataset_builder import MultilingualDataset
 from learning.learners import *
 from util.evaluation import *
 from optparse import OptionParser
+
+from util.metrics import __check_consistency_and_adapt, f1
 from util.results import PolylingualClassificationResults
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import MultinomialNB
@@ -18,11 +20,15 @@ parser.add_option("-m", "--mode", dest="mode",
 parser.add_option("-l", "--learner", dest="learner",
                   help="Learner method for classification", type=str, default='svm')
 parser.add_option("-o", "--output", dest="output",
-                  help="Result file", type=str,  default='./monolingual_results.csv')
+                  help="Result file", type=str,  default='./by_cat_analysis.csv')
 parser.add_option("-n", "--note", dest="note",
                   help="A description note to be added to the result file", type=str,  default='')
 parser.add_option("-c", "--optimc", dest="optimc", action='store_true',
                   help="Optimices hyperparameters", default=False)
+parser.add_option("-b", "--binary", dest="binary",type=int,
+                  help="Run experiments on a single category specified with this parameter", default=-1)
+parser.add_option("-L", "--languages", dest="languages",type=int,
+                  help="Chooses the maximum number of random languages to consider", default=-1)
 parser.add_option("-f", "--force", dest="force", action='store_true',
                   help="Run even if the result was already computed", default=False)
 parser.add_option("-j", "--n_jobs", dest="n_jobs",type=int,
@@ -53,6 +59,23 @@ def get_params(z_space=False):
         params = [{'C': c_range}]
     return params
 
+
+def evaluation_metrics_by_cat(y, y_, metric=f1):
+    true_labels, predicted_labels, nC = __check_consistency_and_adapt(y, y_)
+    return [metric(hard_single_metric_statistics(true_labels[:, c], predicted_labels[:, c])) for c in range(nC)]
+
+def evaluate_by_cat(polylingual_method, lX, ly, predictor=None):
+    print('prediction for test')
+    assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in evaluate'
+    n_jobs = polylingual_method.n_jobs
+    if predictor is None:
+        predictor = polylingual_method.predict
+    ly_ = predictor(lX)
+    print('evaluation (n_jobs={})'.format(n_jobs))
+    langs = list(ly.keys())
+    evals = Parallel(n_jobs=n_jobs)(delayed(evaluation_metrics_by_cat)(ly[lang], ly_[lang]) for lang in langs)
+    return {lang: evals[i] for i, lang in enumerate(langs)}
+
 if __name__=='__main__':
     (op, args) = parser.parse_args()
 
@@ -62,16 +85,16 @@ if __name__=='__main__':
     # assert op.mode in ['class','class-lang','class-10', 'class-10-nocal', 'naive', 'juxta', 'lri', 'lri-25k',
     #                    'dci-lin', 'dci-pmi', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
 
-    results = PolylingualClassificationResults(op.output)
-
     dataset_file = os.path.basename(op.dataset)
-    result_id = dataset_file+'_'+op.mode+op.learner+('_optimC' if op.optimc else '')
-
-    if not op.force and results.already_calculated(result_id):
-        print('Experiment <'+result_id+'> already computed. Exit.')
-        sys.exit()
 
     data = MultilingualDataset.load(op.dataset)
+    if op.binary != -1:
+        assert op.binary < data.num_categories(), 'category not in scope'
+        data.set_view(categories=np.array([op.binary]))
+    if op.languages != -1:
+        assert op.languages < len(data.langs()), 'too many languages'
+        languages = ['en'] + [l for l in data.langs() if l != 'en']
+        data.set_view(languages=languages[:op.languages])
     data.show_dimensions()
     #data.show_category_prevalences()
 
@@ -131,21 +154,13 @@ if __name__=='__main__':
                                                               alpha=0.5,
                                                               c_parameters=get_params(), y_parameters=get_params(), n_jobs=op.n_jobs)
 
-    languages = data.langs()
-    for i,lang1 in enumerate(languages):
-        for j in range(i+1, len(languages)):
-            lang2 = languages[j]
-            print('Bilingual: ' + lang1 + "-" + lang2)
-            data.set_view(languages=[lang1, lang2])
-            classifier.fit(data.lXtr(), data.lYtr())
-            l_eval = evaluate(classifier, data.lXte(), data.lYte())
+    classifier.fit(data.lXtr(), data.lYtr())
+    l_eval = evaluate_by_cat(classifier, data.lXte(), data.lYte())
 
-            for eval_lang in [lang1, lang2]:
-                macrof1, microf1, macrok, microk = l_eval[eval_lang]
-                print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (eval_lang, macrof1, microf1))
-                notes = op.note + ('C=' + str(op.set_c) if op.set_c != 1 else '') + str(classifier.best_params() if op.optimc else '')
-                train_added_lang = lang1 if eval_lang==lang2 else lang2
-                results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, -1, train_added_lang, classifier.time, eval_lang, macrof1, microf1, macrok, microk, notes=notes)
+    with open(op.output, 'a') as fout:
+        for lang in data.langs():
+            by_cat_f1 = l_eval[lang]
+            print('Lang %s: %s' % (lang, str(by_cat_f1)))
+            fout.write("{}\t{}\t{}\t{}\t{}\t{}\n".format(op.mode, op.learner, op.optimc, data.dataset_name, lang, '\t'.join([str(x) for x in by_cat_f1])))
 
-
-
+    print('Done')

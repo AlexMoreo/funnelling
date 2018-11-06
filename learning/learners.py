@@ -305,8 +305,7 @@ class CLESAPolylingualClassifier:
         zy = np.vstack([ly[lang] for lang in langs])
 
         print('fitting the Z-space of shape={}'.format(Z.shape))
-        self.model = MonolingualClassifier(base_learner=self.base_learner, parameters=self.z_parameters,
-                                           n_jobs=self.n_jobs)
+        self.model = MonolingualClassifier(base_learner=self.base_learner, parameters=self.z_parameters, n_jobs=self.n_jobs)
         self.model.fit(Z, zy, single_label)
         self.time = self.time + (time.time() - tinit)
         return self
@@ -340,6 +339,83 @@ class CLESAPolylingualClassifier:
         return self.model.best_params_
 
 
+#TODO: unify classes
+class KCCAPolylingualClassifier:
+    """
+    A polylingual classifier based on the KCCA method. Using:
+    @article{bilenko2016pyrcca,
+      title={Pyrcca: regularized kernel canonical correlation analysis in python and its applications to neuroimaging},
+      author={Bilenko, Natalia Y and Gallant, Jack L},
+      journal={Frontiers in neuroinformatics},
+      volume={10},
+      pages={49},
+      year={2016},
+      publisher={Frontiers}
+    }
+    """
+    def __init__(self, base_learner, lW, z_parameters=None, kernel='linear', numCC=100, n_jobs=-1):
+        """
+        :param lW: a dictionary {lang : wikipedia doc-by-term matrix}
+        :param z_parameters: the parameters of the learner to optimize for via 5-fold cv in the z-space
+        """
+        self.base_learner = base_learner
+        self.z_parameters=z_parameters
+        self.lW = lW
+        self.kernel = kernel
+        self.n_jobs = n_jobs
+        self.time = 0
+        self.lang_order = list(lW.keys())
+        self.kcca = None
+        self.numCC = numCC
+
+    def fit(self, lX, ly, single_label=False):
+        assert set(lX.keys()).issubset(set(self.lW.keys())), 'not all languages in scope'
+        assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in fit'
+
+        from pyrcca.rcca import CCA
+        self.kcca = CCA(kernelcca=True, reg=0.01, numCC=self.numCC)
+        self.kcca.train([self.lW[l].toarray() for l in self.lang_order])
+
+        print('projecting the documents')
+        projections = self.kcca.project([lX[l].toarray() for l in self.lang_order])
+        lZ = {l:projections[i] for i,l in enumerate(self.lang_order)}
+
+        return self.fit_from_transformed(lZ, ly, single_label=single_label)
+
+    def fit_from_transformed(self, lZ, ly, single_label=False):
+        tinit = time.time()
+        langs = list(lZ.keys())
+        Z = np.vstack([lZ[lang] for lang in langs])  # Z is the language independent space
+        zy = np.vstack([ly[lang] for lang in langs])
+
+        print('fitting the Z-space of shape={}'.format(Z.shape))
+        self.model = MonolingualClassifier(base_learner=self.base_learner, parameters=self.z_parameters, n_jobs=self.n_jobs)
+        self.model.fit(Z, zy, single_label)
+        self.time = self.time + (time.time() - tinit)
+        return self
+
+    def transform(self, lX, accum_time=True):
+        tinit = time.time()
+        # self.kcca.validate([lX[l].toarray() for l in self.lang_order])
+        projections = self.kcca.project([lX[l].toarray() for l in self.lang_order])
+        lZ = {l: projections[i] for i, l in enumerate(self.lang_order)}
+        if accum_time:
+            self.time = self.time + (time.time() - tinit)
+        return lZ
+
+    def predict_from_transformed(self, lZ):
+        assert self.model is not None, 'predict called before fit'
+        return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
+
+    def predict(self, lX):
+        assert self.kcca is not None, 'KCCA predict called before fit'
+        lZ = self.transform(lX)
+        return self.predict_from_transformed(lZ)
+
+    def best_params(self):
+        return self.model.best_params_
+
+
 class DCIPolylingualClassifier:
     """
     An instantiation of DCI in polylingual documents using categories as pivots
@@ -359,11 +435,12 @@ class DCIPolylingualClassifier:
         print('projecting the documents')
         langs = list(lX.keys())
         lZ = self.doc_projector.transform(lX)
+
         Z = np.vstack([lZ[lang] for lang in langs]) # Z is the language independent space
         zy = np.vstack([ly[lang] for lang in langs])
 
         print('fitting the Z-space of shape={}'.format(Z.shape))
-        self.model = MonolingualClassifier(base_learner=self.base_learner, parameters=self.z_parameters)
+        self.model = MonolingualClassifier(base_learner=self.base_learner, parameters=self.z_parameters, n_jobs=self.n_jobs)
         self.model.fit(Z, zy, single_label)
         self.time = time.time() - tinit
         return self
@@ -629,6 +706,7 @@ class ClassJuxtaEmbeddingPolylingualClassifier:
         normalize(XZ, norm='l2', axis=1, copy=False)
         return XZ
 
+
 class PolylingualEmbeddingsClassifier:
     """
     This classifier creates document embeddings by a tfidf weighted average of polylingual embeddings from the article
@@ -716,6 +794,8 @@ class PolylingualEmbeddingsClassifier:
         self.model.fit(WEtr, Ytr, single_label)
         self.time = time.time() - tinit
         return self
+
+
 
     def predict(self, lX):
         """
