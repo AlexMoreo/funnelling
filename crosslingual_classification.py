@@ -104,13 +104,13 @@ if __name__=='__main__':
                 print('Learning Class-Embedding Poly-lingual Classifier')
                 classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                             final_learner=get_learner(calibrate=False),
-                                                            parameters=None, z_parameters=get_params(z_space=True),
+                                                            base_parameters=None, meta_parameters=get_params(z_space=True),
                                                             n_jobs=op.n_jobs)
             elif op.mode == 'class-10':
                 print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
                 classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                             final_learner=get_learner(calibrate=False),
-                                                            parameters=None, z_parameters=get_params(z_space=True),
+                                                            base_parameters=None, meta_parameters=get_params(z_space=True),
                                                             folded_projections=10,
                                                             n_jobs=op.n_jobs)
             elif op.mode == 'naive':
@@ -152,7 +152,7 @@ if __name__=='__main__':
                 print('Learning Monolingual Class-Embedding in the English-only corpus')
                 classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
                                                             final_learner=get_learner(calibrate=False),
-                                                            parameters=None, z_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
+                                                            base_parameters=None, meta_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
             elif op.mode == 'juxtaclass':
                 print('Learning Juxtaposed-Class-Embeddings Poly-lingual Classifier')
                 classifier = ClassJuxtaEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),

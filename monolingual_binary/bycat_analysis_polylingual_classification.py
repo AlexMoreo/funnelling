@@ -4,6 +4,8 @@ from dataset_builder import MultilingualDataset
 from learning.learners import *
 from util.evaluation import *
 from optparse import OptionParser
+
+from util.metrics import __check_consistency_and_adapt, f1
 from util.results import PolylingualClassificationResults
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import MultinomialNB
@@ -18,7 +20,7 @@ parser.add_option("-m", "--mode", dest="mode",
 parser.add_option("-l", "--learner", dest="learner",
                   help="Learner method for classification", type=str, default='svm')
 parser.add_option("-o", "--output", dest="output",
-                  help="Result file", type=str,  default='./testtime.csv')
+                  help="Result file", type=str,  default='./by_cat_analysis.csv')
 parser.add_option("-n", "--note", dest="note",
                   help="A description note to be added to the result file", type=str,  default='')
 parser.add_option("-c", "--optimc", dest="optimc", action='store_true',
@@ -33,16 +35,10 @@ parser.add_option("-j", "--n_jobs", dest="n_jobs",type=int,
                   help="Number of parallel jobs (default is -1, all)", default=-1)
 parser.add_option("-s", "--set_c", dest="set_c",type=float,
                   help="Set the C parameter", default=1)
-parser.add_option("-w", "--we-path", dest="we_path",
-                  help="Path to the polylingual word embeddings (required only if --mode polyembeddings)")
-
-#note: Multinomial Naive-Bayes descargado: no está calibrado, no funciona con valores negativos, la adaptación a valores
-#reales es artificial
-#note: really make_scorer(macroF1) seems to be better with the actual loss [tough not significantly]
 
 def get_learner(calibrate=False):
     if op.learner == 'svm':
-        learner = SVC(kernel='rbf', probability=calibrate, cache_size=1000, C=op.set_c)
+        learner = SVC(kernel='linear', probability=calibrate, cache_size=1000, C=op.set_c)
     elif op.learner == 'nb':
         learner = MultinomialNB()
     elif op.learner == 'lr':
@@ -63,6 +59,23 @@ def get_params(z_space=False):
         params = [{'C': c_range}]
     return params
 
+
+def evaluation_metrics_by_cat(y, y_, metric=f1):
+    true_labels, predicted_labels, nC = __check_consistency_and_adapt(y, y_)
+    return [metric(hard_single_metric_statistics(true_labels[:, c], predicted_labels[:, c])) for c in range(nC)]
+
+def evaluate_by_cat(polylingual_method, lX, ly, predictor=None):
+    print('prediction for test')
+    assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in evaluate'
+    n_jobs = polylingual_method.n_jobs
+    if predictor is None:
+        predictor = polylingual_method.predict
+    ly_ = predictor(lX)
+    print('evaluation (n_jobs={})'.format(n_jobs))
+    langs = list(ly.keys())
+    evals = Parallel(n_jobs=n_jobs)(delayed(evaluation_metrics_by_cat)(ly[lang], ly_[lang]) for lang in langs)
+    return {lang: evals[i] for i, lang in enumerate(langs)}
+
 if __name__=='__main__':
     (op, args) = parser.parse_args()
 
@@ -71,7 +84,6 @@ if __name__=='__main__':
     assert not (op.set_c != 1. and op.optimc), 'Parameter C cannot be defined along with optim_c option'
     # assert op.mode in ['class','class-lang','class-10', 'class-10-nocal', 'naive', 'juxta', 'lri', 'lri-25k',
     #                    'dci-lin', 'dci-pmi', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
-
 
     dataset_file = os.path.basename(op.dataset)
 
@@ -141,35 +153,14 @@ if __name__=='__main__':
                                                               final_learner=get_learner(calibrate=False),
                                                               alpha=0.5,
                                                               c_parameters=get_params(), y_parameters=get_params(), n_jobs=op.n_jobs)
-    elif op.mode == 'polyembeddings':
-        print('Learning Poly-lingual Word Embedding based Classifier')
-        classifier = PolylingualEmbeddingsClassifier(wordembeddings_path=op.we_path, learner=get_learner(calibrate=False),
-                                                     c_parameters=get_params(z_space=False), n_jobs=op.n_jobs)
-    elif op.mode == 'polyembeddingsrbf':
-        print('Learning Poly-lingual Word Embedding based Classifier')
-        classifier = PolylingualEmbeddingsClassifier(wordembeddings_path=op.we_path, learner=get_learner(calibrate=False),
-                                                     c_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
 
     classifier.fit(data.lXtr(), data.lYtr())
+    l_eval = evaluate_by_cat(classifier, data.lXte(), data.lYte())
 
-    with open(op.output, mode='a') as ftime:
-        tini = time.time()
-        ly_ = classifier.predict(data.lXte())
-        test_time = time.time() - tini
-        if op.mode.startswith('polyembeddings'):
-            ftime.write(op.mode + '\t' + op.dataset + '\t' + op.learner + '\t' + str(classifier.embed_time) + '\tembed\n')
-            ftime.write(op.mode + '\t' + op.dataset + '\t' + op.learner + '\t' + str(classifier.time - classifier.embed_time) + '\ttrain\n')
-            ftime.write(op.mode + '\t' + op.dataset + '\t' + op.learner + '\t' + str(test_time) + '\ttest\n')
-        else:
-            # nDocs = sum([lX.shape[0] if hasattr(lX,'shape') else len(lX) for lX in data.lXte().values()])
-            ftime.write(op.mode+'\t'+data.dataset_name+'\t'+op.learner+'\t'+str(test_time)+'\n')
+    with open(op.output, 'a') as fout:
+        for lang in data.langs():
+            by_cat_f1 = l_eval[lang]
+            print('Lang %s: %s' % (lang, str(by_cat_f1)))
+            fout.write("{}\t{}\t{}\t{}\t{}\t{}\n".format(op.mode, op.learner, op.optimc, data.dataset_name, lang, '\t'.join([str(x) for x in by_cat_f1])))
 
-
-
-    print('Done!')
-
-
-
-
-
-
+    print('Done')

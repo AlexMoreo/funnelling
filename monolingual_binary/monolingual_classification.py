@@ -18,31 +18,21 @@ parser.add_option("-m", "--mode", dest="mode",
 parser.add_option("-l", "--learner", dest="learner",
                   help="Learner method for classification", type=str, default='svm')
 parser.add_option("-o", "--output", dest="output",
-                  help="Result file", type=str,  default='./testtime.csv')
+                  help="Result file", type=str,  default='./monolingual_results.csv')
 parser.add_option("-n", "--note", dest="note",
                   help="A description note to be added to the result file", type=str,  default='')
 parser.add_option("-c", "--optimc", dest="optimc", action='store_true',
                   help="Optimices hyperparameters", default=False)
-parser.add_option("-b", "--binary", dest="binary",type=int,
-                  help="Run experiments on a single category specified with this parameter", default=-1)
-parser.add_option("-L", "--languages", dest="languages",type=int,
-                  help="Chooses the maximum number of random languages to consider", default=-1)
 parser.add_option("-f", "--force", dest="force", action='store_true',
                   help="Run even if the result was already computed", default=False)
 parser.add_option("-j", "--n_jobs", dest="n_jobs",type=int,
                   help="Number of parallel jobs (default is -1, all)", default=-1)
 parser.add_option("-s", "--set_c", dest="set_c",type=float,
                   help="Set the C parameter", default=1)
-parser.add_option("-w", "--we-path", dest="we_path",
-                  help="Path to the polylingual word embeddings (required only if --mode polyembeddings)")
-
-#note: Multinomial Naive-Bayes descargado: no está calibrado, no funciona con valores negativos, la adaptación a valores
-#reales es artificial
-#note: really make_scorer(macroF1) seems to be better with the actual loss [tough not significantly]
 
 def get_learner(calibrate=False):
     if op.learner == 'svm':
-        learner = SVC(kernel='rbf', probability=calibrate, cache_size=1000, C=op.set_c)
+        learner = SVC(kernel='linear', probability=calibrate, cache_size=1000, C=op.set_c)
     elif op.learner == 'nb':
         learner = MultinomialNB()
     elif op.learner == 'lr':
@@ -72,17 +62,16 @@ if __name__=='__main__':
     # assert op.mode in ['class','class-lang','class-10', 'class-10-nocal', 'naive', 'juxta', 'lri', 'lri-25k',
     #                    'dci-lin', 'dci-pmi', 'clesa', 'upper', 'monoclass', 'juxtaclass'], 'unexpected mode'
 
+    results = PolylingualClassificationResults(op.output)
 
     dataset_file = os.path.basename(op.dataset)
+    result_id = dataset_file+'_'+op.mode+op.learner+('_optimC' if op.optimc else '')
+
+    if not op.force and results.already_calculated(result_id):
+        print('Experiment <'+result_id+'> already computed. Exit.')
+        sys.exit()
 
     data = MultilingualDataset.load(op.dataset)
-    if op.binary != -1:
-        assert op.binary < data.num_categories(), 'category not in scope'
-        data.set_view(categories=np.array([op.binary]))
-    if op.languages != -1:
-        assert op.languages < len(data.langs()), 'too many languages'
-        languages = ['en'] + [l for l in data.langs() if l != 'en']
-        data.set_view(languages=languages[:op.languages])
     data.show_dimensions()
     #data.show_category_prevalences()
 
@@ -141,35 +130,18 @@ if __name__=='__main__':
                                                               final_learner=get_learner(calibrate=False),
                                                               alpha=0.5,
                                                               c_parameters=get_params(), y_parameters=get_params(), n_jobs=op.n_jobs)
-    elif op.mode == 'polyembeddings':
-        print('Learning Poly-lingual Word Embedding based Classifier')
-        classifier = PolylingualEmbeddingsClassifier(wordembeddings_path=op.we_path, learner=get_learner(calibrate=False),
-                                                     c_parameters=get_params(z_space=False), n_jobs=op.n_jobs)
-    elif op.mode == 'polyembeddingsrbf':
-        print('Learning Poly-lingual Word Embedding based Classifier')
-        classifier = PolylingualEmbeddingsClassifier(wordembeddings_path=op.we_path, learner=get_learner(calibrate=False),
-                                                     c_parameters=get_params(z_space=True), n_jobs=op.n_jobs)
 
-    classifier.fit(data.lXtr(), data.lYtr())
+    languages = data.langs()
+    for lang in languages:
+        print('Monolingual: ' + lang)
+        data.set_view(languages=[lang])
+        classifier.fit(data.lXtr(), data.lYtr())
+        l_eval = evaluate(classifier, data.lXte(), data.lYte())
 
-    with open(op.output, mode='a') as ftime:
-        tini = time.time()
-        ly_ = classifier.predict(data.lXte())
-        test_time = time.time() - tini
-        if op.mode.startswith('polyembeddings'):
-            ftime.write(op.mode + '\t' + op.dataset + '\t' + op.learner + '\t' + str(classifier.embed_time) + '\tembed\n')
-            ftime.write(op.mode + '\t' + op.dataset + '\t' + op.learner + '\t' + str(classifier.time - classifier.embed_time) + '\ttrain\n')
-            ftime.write(op.mode + '\t' + op.dataset + '\t' + op.learner + '\t' + str(test_time) + '\ttest\n')
-        else:
-            # nDocs = sum([lX.shape[0] if hasattr(lX,'shape') else len(lX) for lX in data.lXte().values()])
-            ftime.write(op.mode+'\t'+data.dataset_name+'\t'+op.learner+'\t'+str(test_time)+'\n')
-
-
-
-    print('Done!')
-
-
-
+        macrof1, microf1, macrok, microk = l_eval[lang]
+        print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (lang, macrof1, microf1))
+        notes = op.note + ('C=' + str(op.set_c) if op.set_c != 1 else '') + str(classifier.best_params() if op.optimc else '')
+        results.add_row(result_id, op.mode, op.learner, op.optimc, data.dataset_name, -1, lang, classifier.time, lang, macrof1, microf1, macrok, microk, notes=notes)
 
 
 
