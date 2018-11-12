@@ -1,6 +1,14 @@
+from nltk.corpus import stopwords
 from data.languages import NLTK_LANGMAP
 from nltk import word_tokenize
 from nltk.stem import SnowballStemmer
+
+
+def preprocess_documents(documents, lang):
+    tokens = NLTKLemmaTokenizer(lang, verbose=True)
+    sw = stopwords.words(NLTK_LANGMAP[lang])
+    return [' '.join([w for w in tokens(doc) if w not in sw]) for doc in documents]
+
 
 class NLTKLemmaTokenizer(object):
 

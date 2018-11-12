@@ -3,6 +3,7 @@ import scipy
 import time
 import sklearn
 from data.embeddings import WordEmbeddings
+from data.text_preprocessor import preprocess_documents
 from learning.singlelabelsvm import SingleLabelGaps
 from transformers.clesa import CLESA
 from transformers.riboc import RandomIndexingBoC
@@ -19,7 +20,18 @@ from sklearn.externals.joblib import Parallel, delayed
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.preprocessing import normalize
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+import os
+from os.path import exists
+from os import makedirs
+import itertools
+from polylda import PolyLDA
+
+#TODO: unify class structure (e.g., fit_from_transformed
+#TODO: clean methods and documentation
+#TODO: remove single-label and lang-trace
+
+
 
 class FunnelingPolylingualClassifier:
     """
@@ -353,7 +365,7 @@ class KCCAPolylingualClassifier:
       publisher={Frontiers}
     }
     """
-    def __init__(self, base_learner, lW, z_parameters=None, kernel='linear', numCC=100, n_jobs=-1):
+    def __init__(self, base_learner, lW, z_parameters=None, kernel='linear', numCC=100, reg=0.0001,  max_wiki=-1, n_jobs=-1, dopickle=True):
         """
         :param lW: a dictionary {lang : wikipedia doc-by-term matrix}
         :param z_parameters: the parameters of the learner to optimize for via 5-fold cv in the z-space
@@ -364,22 +376,37 @@ class KCCAPolylingualClassifier:
         self.kernel = kernel
         self.n_jobs = n_jobs
         self.time = 0
-        self.lang_order = list(lW.keys())
+        self.lang_order = sorted(list(lW.keys()))
         self.kcca = None
         self.numCC = numCC
+        self.reg = reg
+        self.max_wiki = max_wiki
+        self.dopickle = dopickle
 
     def fit(self, lX, ly, single_label=False):
         assert set(lX.keys()).issubset(set(self.lW.keys())), 'not all languages in scope'
         assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in fit'
 
         from pyrcca.rcca import CCA
-        self.kcca = CCA(kernelcca=True, reg=0.01, numCC=self.numCC)
+
+        tinit = time.time()
+        nlangs = len(self.lang_order)
+        nWdocs = self.lW[self.lang_order[0]].shape[0]
+        if self.max_wiki > -1 and nWdocs > self.max_wiki:
+            nWdocs = self.max_wiki
+            self.lW = {l: self.lW[l][:nWdocs] for l in self.langs}
+        print('Considering {} Wikipedia articles'.format(nWdocs))
+
+        self.kcca = CCA(kernelcca=True, reg=self.reg, numCC=self.numCC)
+        self.kcca = CCA(kernelcca=True, reg=self.reg, numCC=self.numCC)
         self.kcca.train([self.lW[l].toarray() for l in self.lang_order])
+        print('kcca train took {:.2f} s'.format(self.kcca.train_time))
 
         print('projecting the documents')
         projections = self.kcca.project([lX[l].toarray() for l in self.lang_order])
         lZ = {l:projections[i] for i,l in enumerate(self.lang_order)}
 
+        self.time=time.time()-tinit
         return self.fit_from_transformed(lZ, ly, single_label=single_label)
 
     def fit_from_transformed(self, lZ, ly, single_label=False):
@@ -392,6 +419,7 @@ class KCCAPolylingualClassifier:
         self.model = MonolingualClassifier(base_learner=self.base_learner, parameters=self.z_parameters, n_jobs=self.n_jobs)
         self.model.fit(Z, zy, single_label)
         self.time = self.time + (time.time() - tinit)
+        print('SVM fit done in {:.2f} s'.format(self.time))
         return self
 
     def transform(self, lX, accum_time=True):
@@ -409,6 +437,96 @@ class KCCAPolylingualClassifier:
 
     def predict(self, lX):
         assert self.kcca is not None, 'KCCA predict called before fit'
+        lZ = self.transform(lX)
+        return self.predict_from_transformed(lZ)
+
+    def best_params(self):
+        return self.model.best_params_
+
+
+class PLDAPolylingualClassifier:
+    """
+    A polylingual classifier based on the Polylingual Topic Models (Latent Dirichlet Allocation). Using the
+    implementation of https://github.com/hijackedmc/polylingual-lda-cython-master of the article:
+    @inproceedings{mimno2009polylingual,
+      title={Polylingual topic models},
+      author={Mimno, David and Wallach, Hanna M and Naradowsky, Jason and Smith, David A and McCallum, Andrew},
+      booktitle={Proceedings of the 2009 Conference on Empirical Methods in Natural Language Processing: Volume 2-Volume 2},
+      pages={880--889},
+      year={2009},
+      organization={Association for Computational Linguistics}
+    }
+    """
+    def __init__(self, base_learner, lW, z_parameters=None, nTopics=100, iterations=2000, max_wiki=-1, n_jobs=-1):
+        """
+        :param lW: a dictionary {lang : wikipedia doc-by-term matrix}
+        :param z_parameters: the parameters of the learner to optimize for via 5-fold cv in the z-space
+        """
+        self.base_learner = base_learner
+        self.z_parameters=z_parameters
+        self.lW = lW
+        self.nTopics = nTopics
+        self.iterations = iterations
+        self.max_wiki = max_wiki
+        self.n_jobs = n_jobs
+        self.time = 0
+        self.langs = sorted(list(lW.keys()))
+
+
+    def fit(self, lX, ly, single_label=False):
+        assert set(lX.keys()).issubset(set(self.lW.keys())), 'not all languages in scope'
+        assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in fit'
+
+        tinit = time.time()
+        nlangs = len(self.langs)
+        nWdocs = len(self.lW[self.langs[0]])
+        if self.max_wiki != -1 and nWdocs > self.max_wiki:
+            nWdocs = self.max_wiki
+            self.lW={l:self.lW[l][:nWdocs] for l in self.langs}
+        print('Considering {} Wikipedia articles'.format(nWdocs))
+
+        print('preprocessing Wikipedia documents ({} documents for {} languages)'.format(nWdocs, nlangs))
+        Wprocessed = Parallel(n_jobs=-1)(delayed(preprocess_documents)(self.lW[l], l) for l in self.langs)
+        wiki_pool = list(itertools.chain.from_iterable(Wprocessed))  # contains all documents, since the matrix should account for all terms
+
+        print('getting the juxtaposed BoW matrix of the Wikipedia articles')
+        self.counter = CountVectorizer(min_df=10)
+        self.counter.fit(wiki_pool)
+        print('Vocabulary size = {}'.format(len(self.counter.vocabulary_)))
+        wiki_matrices = [self.counter.transform(Wi).toarray() for Wi in Wprocessed]
+
+        print('fitting the Polylingual Topic Model (Poly-LDA) (nTopics={} iterations={})'.format(self.nTopics, self.iterations))
+        self.polylda = PolyLDA(n_topics=self.nTopics, n_iter=self.iterations, languages=len(self.langs))
+        self.polylda.fit(wiki_matrices)
+
+        print('transform raw documents into BoW and then into topic distributions')
+        lZ = self.transform(lX)
+
+        self.time = time.time()-tinit
+        return self.fit_from_transformed(lZ, ly, single_label=single_label)
+
+    def fit_from_transformed(self, lZ, ly, single_label=False):
+        tinit = time.time()
+        langs = list(lZ.keys())
+        Z = np.vstack([lZ[lang] for lang in langs])  # Z is the language independent space
+        zy = np.vstack([ly[lang] for lang in langs])
+
+        print('fitting the Z-space of shape={}'.format(Z.shape))
+        self.model = MonolingualClassifier(base_learner=self.base_learner, parameters=self.z_parameters, n_jobs=self.n_jobs)
+        self.model.fit(Z, zy, single_label)
+        self.time = self.time + (time.time() - tinit)
+        print('SVM fit done in {:.2f} s'.format(self.time))
+        return self
+
+    def transform(self, lX):
+        assert hasattr(self, 'counter') and hasattr(self, 'polylda'), 'transform called before fit'
+        return {l: self.polylda.transform(self.counter.transform(lX[l]).toarray(), which_language=i) for i, l in enumerate(self.langs)}
+
+    def predict_from_transformed(self, lZ):
+        assert self.model is not None, 'predict called before fit'
+        return _joblib_transform_multiling(self.model.predict, lZ, n_jobs=self.n_jobs)
+
+    def predict(self, lX):
         lZ = self.transform(lX)
         return self.predict_from_transformed(lZ)
 
@@ -608,7 +726,7 @@ class MonolingualClassifier:
         if self.parameters:
             print('debug: optimizing parameters:', self.parameters)
             self.model = GridSearchCV(self.model, param_grid=self.parameters, refit=True, cv=5, n_jobs=self.n_jobs,
-                                      error_score=0, verbose=0)
+                                      error_score=0, verbose=10)
 
         print('fitting:',self.model)
         self.model.fit(X,y)

@@ -7,7 +7,7 @@ from data.languages import lang_set, NLTK_LANGMAP, RCV2_LANGS_WITH_NLTK_STEMMING
 from data.reader.rcv_reader import fetch_RCV1, fetch_RCV2, fetch_topic_hierarchy
 from data.reader.reuters21578_reader import fetch_reuters21579
 from data.reader.wikipedia_tools import fetch_wikipedia_multilingual, random_wiki_sample
-from data.text_preprocessor import NLTKLemmaTokenizer
+from data.text_preprocessor import NLTKLemmaTokenizer, preprocess_documents
 import pickle
 import numpy as np
 from random import shuffle
@@ -148,12 +148,6 @@ def filter_by_categories(doclist, keep_categories):
     for d in doclist:
         d.categories = list(set(d.categories).intersection(catset))
 
-def _preprocess(documents, lang):
-    tokens = NLTKLemmaTokenizer(lang, verbose=True)
-    sw = stopwords.words(NLTK_LANGMAP[lang])
-    return [' '.join([w for w in tokens(doc) if w not in sw]) for doc in documents]
-
-
 
 # creates a MultilingualDataset where matrices lie in language-specific feature spaces
 def build_independent_matrices(dataset_name, langs, training_docs, test_docs, label_names, wiki_docs=[], preprocess=True, singlelabel=False):
@@ -230,8 +224,8 @@ def build_juxtaposed_matrices(dataset_name, langs, training_docs, test_docs, lab
         tr_data, tr_labels, tr_ID = zip(*training_docs[lang])
         te_data, te_labels, te_ID = zip(*test_docs[lang])
         if preprocess:
-            tr_data = _preprocess(tr_data, lang)
-            te_data = _preprocess(te_data, lang)
+            tr_data = preprocess_documents(tr_data, lang)
+            te_data = preprocess_documents(te_data, lang)
         tr_data_stack.extend(tr_data)
         multiling_dataset.add(lang, tr_data, tr_labels, te_data, te_labels, tr_ID, te_ID)
 

@@ -36,6 +36,8 @@ parser.add_option("-S", "--singlelabel", dest="singlelabel", action='store_true'
                   help="Treat the label matrix as a single-label one", default=False)
 parser.add_option("-w", "--we-path", dest="we_path",
                   help="Path to the polylingual word embeddings (required only if --mode polyembeddings)")
+parser.add_option("-W", "--wiki", dest="wiki",
+                  help="Path to Wikipedia raw documents", type=str, default=None)
 parser.add_option("--calmode", dest="calmode",
                   help="Calibration mode for the base classifiers (only for class-based models). Valid ones are"
                        "'cal' (default, calibrates the base classifiers and use predict_proba to project), "
@@ -162,36 +164,20 @@ if __name__=='__main__':
         print('Learning Poly-lingual Word Embedding based Classifier')
         classifier = PolylingualEmbeddingsClassifier(wordembeddings_path=op.we_path, learner=get_learner(calibrate=False),
                                                      c_parameters=get_params(dense=False), n_jobs=op.n_jobs)
-    elif op.mode == 'polyembeddingsrbf':
-        print('Learning Poly-lingual Word Embedding based Classifier')
-        classifier = PolylingualEmbeddingsClassifier(wordembeddings_path=op.we_path, learner=get_learner(calibrate=False),
-                                                     c_parameters=get_params(dense=True), n_jobs=op.n_jobs)
+    elif op.mode == 'plda':
+        print('Learning Poly-lingual Classifier based on Poly-LDA')
+        lW = pickle.load(open(op.wiki, 'rb')) # to be preprocessed
+        classifier = PLDAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(dense=True),
+                                               nTopics=400, iterations=2000, max_wiki=2500, n_jobs=-1)
+
     elif op.mode == 'kcca':
         lW = pickle.load(open(op.dataset.replace('.pickle', '.wiki.pickle'), 'rb'))
 
-
-        # print('drastic reduction in the W SPACE')
-        lW = {l:W[:999] for l,W in lW.items()}
-        # #
-        #
-        #
-        # lW = {'es':lW['es'], 'en':lW['en']}
-        # lXtr = {'es': lXtr['es'], 'en': lXtr['en']}
-        # lytr = {'es': lytr['es'], 'en': lytr['en']}
-        # lXte = {'es': lXte['es'], 'en': lXte['en']}
-        # lyte = {'es': lyte['es'], 'en': lyte['en']}
-
-        # lFS = {l: RoundRobin(k=999) for l in lW.keys()}
-        # lXtr = {l: lFS[l].fit_transform(lXtr[l], lytr[l]) for l in lW.keys()}
-        # lXte = {l: lFS[l].transform(lXte[l]) for l in lW.keys()}
-        # lW = {l: lFS[l].transform(lW[l]) for l in lW.keys()}
-
-
         print('Learning KCCA-based Classifier')
         classifier = KCCAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(dense=True),
-                                                n_jobs=op.n_jobs)
-
-
+                                               numCC=1000, reg=100, max_wiki=2500, n_jobs=op.n_jobs)
+    else:
+        raise ValueError('Unknown mode {}'.format(op.mode))
 
 
 
@@ -202,7 +188,7 @@ if __name__=='__main__':
         op.mode += op.calmode
 
     metrics  = []
-    for lang in data.langs():
+    for lang in lXte.keys():
         macrof1, microf1, macrok, microk = l_eval[lang]
         metrics.append([macrof1, microf1, macrok, microk])
         print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (lang, macrof1, microf1))
