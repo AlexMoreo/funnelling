@@ -376,7 +376,7 @@ class KCCAPolylingualClassifier:
         self.kernel = kernel
         self.n_jobs = n_jobs
         self.time = 0
-        self.lang_order = sorted(list(lW.keys()))
+        self.langs = sorted(list(lW.keys()))
         self.kcca = None
         self.numCC = numCC
         self.reg = reg
@@ -390,8 +390,8 @@ class KCCAPolylingualClassifier:
         from pyrcca.rcca import CCA
 
         tinit = time.time()
-        nlangs = len(self.lang_order)
-        nWdocs = self.lW[self.lang_order[0]].shape[0]
+        nlangs = len(self.langs)
+        nWdocs = self.lW[self.langs[0]].shape[0]
         if self.max_wiki > -1 and nWdocs > self.max_wiki:
             nWdocs = self.max_wiki
             self.lW = {l: self.lW[l][:nWdocs] for l in self.langs}
@@ -399,12 +399,12 @@ class KCCAPolylingualClassifier:
 
         self.kcca = CCA(kernelcca=True, reg=self.reg, numCC=self.numCC)
         self.kcca = CCA(kernelcca=True, reg=self.reg, numCC=self.numCC)
-        self.kcca.train([self.lW[l].toarray() for l in self.lang_order])
+        self.kcca.train([self.lW[l].toarray() for l in self.langs])
         print('kcca train took {:.2f} s'.format(self.kcca.train_time))
 
         print('projecting the documents')
-        projections = self.kcca.project([lX[l].toarray() for l in self.lang_order])
-        lZ = {l:projections[i] for i,l in enumerate(self.lang_order)}
+        projections = self.kcca.project([lX[l].toarray() for l in self.langs])
+        lZ = {l:projections[i] for i,l in enumerate(self.langs)}
 
         self.time=time.time()-tinit
         return self.fit_from_transformed(lZ, ly, single_label=single_label)
@@ -425,8 +425,8 @@ class KCCAPolylingualClassifier:
     def transform(self, lX, accum_time=True):
         tinit = time.time()
         # self.kcca.validate([lX[l].toarray() for l in self.lang_order])
-        projections = self.kcca.project([lX[l].toarray() for l in self.lang_order])
-        lZ = {l: projections[i] for i, l in enumerate(self.lang_order)}
+        projections = self.kcca.project([lX[l].toarray() for l in self.langs])
+        lZ = {l: projections[i] for i, l in enumerate(self.langs)}
         if accum_time:
             self.time = self.time + (time.time() - tinit)
         return lZ
