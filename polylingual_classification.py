@@ -175,7 +175,7 @@ if __name__=='__main__':
 
         print('Learning KCCA-based Classifier')
         classifier = KCCAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(dense=True),
-                                               numCC=1000, reg=100, max_wiki=2500, n_jobs=op.n_jobs)
+                                               numCC=1000, reg=100, max_wiki=2000, n_jobs=op.n_jobs)
     else:
         raise ValueError('Unknown mode {}'.format(op.mode))
 
