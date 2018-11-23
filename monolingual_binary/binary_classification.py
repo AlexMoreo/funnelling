@@ -76,17 +76,17 @@ if __name__=='__main__':
 
     if op.mode == 'class':
         print('Learning Class-Embedding Poly-lingual Classifier')
-        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
-                                                    final_learner=get_learner(calibrate=False),
-                                                    base_parameters=None, meta_parameters=get_params(z_space=True),
-                                                    n_jobs=op.n_jobs)
+        classifier = FunnellingPolylingualClassifier(first_tier_learner=get_learner(calibrate=True),
+                                                     meta_learner=get_learner(calibrate=False),
+                                                     first_tier_parameters=None, meta_parameters=get_params(z_space=True),
+                                                     n_jobs=op.n_jobs)
     elif op.mode == 'class-10':
         print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
-        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
-                                                    final_learner=get_learner(calibrate=False),
-                                                    base_parameters=None, meta_parameters=get_params(z_space=True),
-                                                    folded_projections=10,
-                                                    n_jobs=op.n_jobs)
+        classifier = FunnellingPolylingualClassifier(first_tier_learner=get_learner(calibrate=True),
+                                                     meta_learner=get_learner(calibrate=False),
+                                                     first_tier_parameters=None, meta_parameters=get_params(z_space=True),
+                                                     folded_projections=10,
+                                                     n_jobs=op.n_jobs)
     nC = data.num_categories()
     for c in range(nC):
         print('binary: ' + str(c))

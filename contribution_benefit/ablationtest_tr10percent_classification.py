@@ -45,10 +45,10 @@ def get_params(z_space=False):
 
 def funnelling_classify_and_test(variant_name, ablated):
     print('Learning Class-Embedding Poly-lingual Classifier')
-    classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
-                                                final_learner=get_learner(calibrate=False),
-                                                base_parameters=None, meta_parameters=get_params(z_space=True),
-                                                n_jobs=op.n_jobs)
+    classifier = FunnellingPolylingualClassifier(first_tier_learner=get_learner(calibrate=True),
+                                                 meta_learner=get_learner(calibrate=False),
+                                                 first_tier_parameters=None, meta_parameters=get_params(z_space=True),
+                                                 n_jobs=op.n_jobs)
     classifier.fit(data.lXtr(), data.lYtr())
 
     # hard eval metrics
@@ -88,10 +88,10 @@ def monolingual_classify_and_test():
 
 def evaluate_posterior_probs(variant_name):
     print('Learning Class-Embedding Poly-lingual Classifier')
-    classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
-                                                final_learner=get_learner(calibrate=False),
-                                                base_parameters=None, meta_parameters=get_params(z_space=True),
-                                                n_jobs=op.n_jobs)
+    classifier = FunnellingPolylingualClassifier(first_tier_learner=get_learner(calibrate=True),
+                                                 meta_learner=get_learner(calibrate=False),
+                                                 first_tier_parameters=None, meta_parameters=get_params(z_space=True),
+                                                 n_jobs=op.n_jobs)
 
     classifier.fit(data.lXtr(), data.lYtr())
 

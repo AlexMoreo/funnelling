@@ -30,10 +30,10 @@ for run in [4,9,8,3]:
         data.set_view(languages=rest_langs)
         data.show_dimensions()
 
-        classifier = FunnelingPolylingualClassifier(auxiliar_learner=SVC(kernel='linear', probability=True),
-                                                    final_learner=SVC(kernel='rbf', probability=False),
-                                                    base_parameters=None, meta_parameters=[{'kernel': ['rbf'], 'C': [1e4, 1e3, 1e2, 1e1, 1]}],
-                                                    n_jobs=-1)
+        classifier = FunnellingPolylingualClassifier(first_tier_learner=SVC(kernel='linear', probability=True),
+                                                     meta_learner=SVC(kernel='rbf', probability=False),
+                                                     first_tier_parameters=None, meta_parameters=[{'kernel': ['rbf'], 'C': [1e4, 1e3, 1e2, 1e1, 1]}],
+                                                     n_jobs=-1)
 
         print('Training Fun(TAT) with all but the ablated language')
         classifier.fit(data.lXtr(), data.lYtr())

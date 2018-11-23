@@ -32,8 +32,7 @@ parser.add_option("-j", "--n_jobs", dest="n_jobs",type=int,
                   help="Number of parallel jobs (default is -1, all)", default=-1)
 parser.add_option("-s", "--set_c", dest="set_c",type=float,
                   help="Set the C parameter", default=1)
-parser.add_option("-S", "--singlelabel", dest="singlelabel", action='store_true',
-                  help="Treat the label matrix as a single-label one", default=False)
+
 parser.add_option("-w", "--we-path", dest="we_path",
                   help="Path to the polylingual word embeddings (required only if --mode polyembeddings)")
 parser.add_option("-W", "--wiki", dest="wiki",
@@ -109,19 +108,19 @@ if __name__=='__main__':
     calibrate = (op.calmode == 'cal')
     if op.mode == 'class':
         print('Learning Class-Embedding Poly-lingual Classifier')
-        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=calibrate),
-                                                    final_learner=get_learner(calibrate=op.singlelabel),
-                                                    base_parameters=None, meta_parameters=get_params(dense=True),
-                                                    calmode=op.calmode,
-                                                    n_jobs=op.n_jobs)
+        classifier = FunnellingPolylingualClassifier(first_tier_learner=get_learner(calibrate=calibrate),
+                                                     meta_learner=get_learner(calibrate=False),
+                                                     first_tier_parameters=None, meta_parameters=get_params(dense=True),
+                                                     calmode=op.calmode,
+                                                     n_jobs=op.n_jobs)
     elif op.mode == 'class-10':
         print('Learning 10-Fold CV Class-Embedding Poly-lingual Classifier')
-        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=calibrate),
-                                                    final_learner=get_learner(calibrate=op.singlelabel),
-                                                    base_parameters=None, meta_parameters=get_params(dense=True),
-                                                    folded_projections=10,
-                                                    calmode=op.calmode,
-                                                    n_jobs=op.n_jobs)
+        classifier = FunnellingPolylingualClassifier(first_tier_learner=get_learner(calibrate=calibrate),
+                                                     meta_learner=get_learner(calibrate=False),
+                                                     first_tier_parameters=None, meta_parameters=get_params(dense=True),
+                                                     folded_projections=10,
+                                                     calmode=op.calmode,
+                                                     n_jobs=op.n_jobs)
     elif op.mode == 'naive':
         print('Learning Naive Poly-lingual Classifier')
         classifier = NaivePolylingualClassifier(base_learner=get_learner(), parameters=get_params(), n_jobs=op.n_jobs)
@@ -151,9 +150,9 @@ if __name__=='__main__':
     elif op.mode == 'monoclass':
         assert data.langs()==['en'], 'only English is expected in the monolingual class embedding call'
         print('Learning Monolingual Class-Embedding in the English-only corpus')
-        classifier = FunnelingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
-                                                    final_learner=get_learner(calibrate=False),
-                                                    base_parameters=None, meta_parameters=get_params(dense=True), n_jobs=op.n_jobs)
+        classifier = FunnellingPolylingualClassifier(first_tier_learner=get_learner(calibrate=True),
+                                                     meta_learner=get_learner(calibrate=False),
+                                                     first_tier_parameters=None, meta_parameters=get_params(dense=True), n_jobs=op.n_jobs)
     elif op.mode == 'juxtaclass':
         print('Learning Juxtaposed-Class-Embeddings Poly-lingual Classifier')
         classifier = ClassJuxtaEmbeddingPolylingualClassifier(auxiliar_learner=get_learner(calibrate=True),
@@ -176,12 +175,14 @@ if __name__=='__main__':
         print('Learning KCCA-based Classifier')
         classifier = KCCAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(dense=True),
                                                numCC=1000, reg=100, max_wiki=2000, n_jobs=op.n_jobs)
+
+
     else:
         raise ValueError('Unknown mode {}'.format(op.mode))
 
 
 
-    classifier.fit(lXtr, lytr, single_label=op.singlelabel)
+    classifier.fit(lXtr, lytr)
     l_eval = evaluate(classifier, lXte, lyte)
 
     if op.calmode!='cal': # the default value does not add a postfix to the method name

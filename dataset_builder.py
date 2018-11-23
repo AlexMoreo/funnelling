@@ -63,6 +63,11 @@ class MultilingualDataset:
         if languages is not None:
             self.languages_view = languages
 
+    def training(self):
+        return self.lXtr(), self.lYtr()
+
+    def test(self):
+        return self.lXte(), self.lYte()
 
     def lXtr(self):
         return {lang:Xtr for (lang, ((Xtr,_,_),_)) in self.multiling_dataset.items() if lang in self.langs()}
