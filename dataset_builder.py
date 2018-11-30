@@ -263,7 +263,7 @@ def __years_to_str(years):
 
 """
 This method has been added a posteriori, to create document embeddings using the polylingual embeddings of the recent
-article 'Word Translation without Parallel Data'; basically, it takes oone of the splits and retrieves the RCV documents
+article 'Word Translation without Parallel Data'; basically, it takes one of the splits and retrieves the RCV documents
 from the doc ids and then pickles an object (tr_docs, te_docs, label_names) in the outpath
 """
 def retrieve_rcv_documents_from_dataset(datasetpath, rcv1_data_home, rcv2_data_home, outpath):

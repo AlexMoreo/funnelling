@@ -48,6 +48,9 @@ class WordEmbeddings:
 
         return WordEmbeddings(lang, we, worddim)
 
+    def vocabulary(self):
+        return set(self.worddim.keys())
+
     def __getitem__(self, key):
         return self.we[self.worddim[key]]
 
@@ -80,6 +83,7 @@ class WordEmbeddings:
         if lost>0: #some termr are missing, so it will be replaced by UNK
             print('warning: missing {} terms for lang {}'.format(lost, self.lang))
         self.we = self.get_vectors(active_vocabulary)
+        assert self.we.shape[0]==len(active_vocabulary)
         self.dimword={i:w for i,w in enumerate(active_vocabulary)}
         self.worddim={w:i for i,w in enumerate(active_vocabulary)}
         return self
@@ -102,7 +106,7 @@ class WordEmbeddings:
         offset=0
         for we in we_list:
             polywe.append(we.we)
-            worddim.update({'{}::{}'.format(we.lang,w):d+offset for w,d in we.worddim.items()})
+            worddim.update({'{}::{}'.format(we.lang, w):d+offset for w,d in we.worddim.items()})
             offset=len(worddim)
         polywe = np.vstack(polywe)
 
