@@ -21,37 +21,31 @@ import sys
 # sys.exit()
 from util.evaluation import evaluation_metrics
 
-basedir = '/media/moreo/1TB Volume/Datasets/PolylingualEmbeddings'
-dataset = '/media/moreo/1TB Volume/Datasets/RCV2/rcv1-2_doclist_trByLang1000_teByLang1000_processed_run0.pickle'
-# basedir = '/home/moreo/CLESA/PolylingualEmbeddings'
-# dataset = '/home/moreo/CLESA/rcv2/rcv1-2_doclist_trByLang1000_teByLang1000_processed_run1.pickle'
+# basedir = '/media/moreo/1TB Volume/Datasets/PolylingualEmbeddings'
+# dataset = '/media/moreo/1TB Volume/Datasets/RCV2/rcv1-2_doclist_trByLang1000_teByLang1000_processed_run0.pickle'
+basedir = '/home/moreo/CLESA/PolylingualEmbeddings'
+dataset = '/home/moreo/CLESA/rcv2/rcv1-2_doclist_trByLang1000_teByLang1000_processed_run1.pickle'
 data = MultilingualDataset.load(dataset)
-langsel='en'
-data.set_view(languages=[langsel])
 langs = data.langs()
 
 lX, lY = data.training()
 lXte, lYte = data.test()
 
-X=lX[langsel]
-y=lY[langsel]
-Xte=lXte[langsel]
-yte=lYte[langsel]
+nclasses = data.num_categories()
 
-some_label = y.sum(axis=1)>0
-X=(np.array(X)[some_label]).tolist()
-y=y[some_label]
+import itertools
 
-some_positive = y.sum(axis=0)>5
-y   = y[:,some_positive]
-yte = yte[:,some_positive]
-nclasses = y.shape[1]
+def add_lang_prefix(docs, lang):
+    return [' '.join([lang+'-'+word for word in doc.split()]) for doc in docs]
 
-nTr = len(X)
-nTe = len(Xte)
+alltexts = list(itertools.chain.from_iterable([add_lang_prefix(lX[l], l) for l in langs]))
+trdocs = len(alltexts)
+tr_labels = list(itertools.chain.from_iterable([lY[l] for l in langs]))
 
-alltexts = X+Xte
-tokenizer = Tokenizer()
+alltexts.extend(list(itertools.chain.from_iterable([add_lang_prefix(lXte[l],l) for l in langs])))
+te_labels = list(itertools.chain.from_iterable([lYte[l] for l in langs]))
+
+tokenizer = Tokenizer(filters='!"#$%&()*+,:./;<=>?@[\]^_`{|}~') # free the '-'
 tokenizer.fit_on_texts(alltexts)
 sequences = tokenizer.texts_to_sequences(alltexts)
 
@@ -61,32 +55,43 @@ print('Found %s unique tokens.' % len(word_index))
 MAX_SEQUENCE_LENGTH=200
 data = pad_sequences(sequences, maxlen=MAX_SEQUENCE_LENGTH)
 
-x_train = data[:nTr]
-y_train = y
-x_test = data[nTr:]
-y_test = yte
+x_train = data[:trdocs]
+y_train = np.vstack(tr_labels)
+x_test = data[trdocs:]
+y_test = np.vstack(te_labels)
+
 
 strip_accents=CountVectorizer(strip_accents='unicode').build_analyzer()
-# pwe = WordEmbeddings.load_poly(basedir, langs, vocabularies, word_preprocessor=strip_accents)
-pwe = WordEmbeddings.load(basedir, langsel, word_preprocessor=strip_accents)
-embeddings_index = pwe.worddim
-
-EMBEDDING_DIM = pwe.dim()
+EMBEDDING_DIM = 300
 embedding_matrix = np.zeros((len(word_index) + 1, EMBEDDING_DIM))
-for word, i in word_index.items():
-    embedding_vector = embeddings_index.get(word)
-    if embedding_vector is not None:
-        # words not found in embedding index will be all-zeros.
-        embedding_matrix[i] = embedding_vector
+empty=0
+for lang in langs:
+    pwe = WordEmbeddings.load(basedir, lang, word_preprocessor=strip_accents)
+    embeddings_index = pwe.worddim
 
+    for word, i in word_index.items():
+        lang_prefix,word=word.split('-')
+        if lang_prefix==lang:
+            embedding_vector = embeddings_index.get(word)
+            if embedding_vector is not None:
+                # words not found in embedding index will be all-zeros.
+                embedding_matrix[i] = embedding_vector
+            else:
+                empty+=1
+
+print('empty vectors={}'.format(empty))
 
 from keras.layers import Embedding, Conv1D, MaxPooling1D, Flatten, Dense, LSTM, Dropout
 
+trainable=True
 embedding_layer = Embedding(len(word_index) + 1,
                             EMBEDDING_DIM,
                             weights=[embedding_matrix],
                             input_length=MAX_SEQUENCE_LENGTH,
-                            trainable=True)
+                            trainable=trainable)
+
+# lo lance con trainable a True
+
 def CNN():
     sequence_input = Input(shape=(MAX_SEQUENCE_LENGTH,), dtype='int32')
     embedded_sequences = embedding_layer(sequence_input)
@@ -105,7 +110,7 @@ def CNN():
 def RNN():
     sequence_input = Input(shape=(MAX_SEQUENCE_LENGTH,), dtype='int32')
     layer = embedding_layer(sequence_input)
-    layer = LSTM(256)(layer)
+    layer = LSTM(64)(layer)
     layer = Dense(256,activation='relu')(layer)
     layer = Dropout(0.5)(layer)
     layer = Dense(nclasses, activation='sigmoid')(layer)
@@ -150,11 +155,14 @@ model.compile(loss='binary_crossentropy',
               # optimizer='adam',
               metrics=['acc', f1])
 
-batch_size = 250
+batch_size = 500
 model.fit(x_train, y_train, validation_data=(x_test, y_test),
-          epochs=20, batch_size=batch_size)
+          epochs=1000, batch_size=batch_size, shuffle=True)
+
 
 probs = model.predict(x_test, batch_size=batch_size)
 yte_ = 1*(probs>0.5)
-Mf1, mf1, Mk, mK = evaluation_metrics(yte, yte_)
+Mf1, mf1, Mk, mK = evaluation_metrics(y_test, yte_)
 print('Eval: {:.3f} {:.3f} {:.3f} {:.3f}'.format(Mf1, mf1, Mk, mK))
+
+print('trainable={}'.format(trainable))
