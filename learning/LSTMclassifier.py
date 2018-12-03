@@ -92,7 +92,7 @@ class LSTMTextClassificationNet(nn.Module):
 basedir = '/media/moreo/1TB Volume/Datasets/PolylingualEmbeddings'
 dataset = '/media/moreo/1TB Volume/Datasets/RCV2/rcv1-2_doclist_trByLang1000_teByLang1000_processed_run1.pickle'
 data = MultilingualDataset.load(dataset)
-langsel='es'
+langsel='en'
 data.set_view(languages=[langsel])
 langs = data.langs()
 
