@@ -7,24 +7,15 @@ from data.text_preprocessor import preprocess_documents
 from transformers.clesa import CLESA
 from transformers.riboc import RandomIndexingBoC
 from transformers.dci import DistributionalCorrespondenceIndexing
-from util.metrics import macroF1, microF1, macroK, microK
 from scipy.sparse import issparse, csr_matrix
-from sklearn.svm import LinearSVC, SVC
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import make_scorer
 from sklearn.model_selection import KFold
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.externals.joblib import Parallel, delayed
-from sklearn.linear_model import LogisticRegression
-from sklearn.naive_bayes import MultinomialNB
 from sklearn.preprocessing import normalize
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
-import os
-from os.path import exists
-from os import makedirs
 import itertools
-from polylda import PolyLDA
+# from polylda import PolyLDA
 
 #TODO: unify class structure (e.g., fit_from_transformed)
 #TODO: clean methods and documentation

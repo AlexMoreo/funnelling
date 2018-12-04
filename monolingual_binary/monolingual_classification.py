@@ -136,7 +136,7 @@ if __name__=='__main__':
         print('Monolingual: ' + lang)
         data.set_view(languages=[lang])
         classifier.fit(data.lXtr(), data.lYtr())
-        l_eval = evaluate(classifier, data.lXte(), data.lYte())
+        l_eval = evaluate_method(classifier, data.lXte(), data.lYte())
 
         macrof1, microf1, macrok, microk = l_eval[lang]
         print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (lang, macrof1, microf1))

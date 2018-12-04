@@ -138,7 +138,7 @@ if __name__=='__main__':
             print('Bilingual: ' + lang1 + "-" + lang2)
             data.set_view(languages=[lang1, lang2])
             classifier.fit(data.lXtr(), data.lYtr())
-            l_eval = evaluate(classifier, data.lXte(), data.lYte())
+            l_eval = evaluate_method(classifier, data.lXte(), data.lYte())
 
             for eval_lang in [lang1, lang2]:
                 macrof1, microf1, macrok, microk = l_eval[eval_lang]

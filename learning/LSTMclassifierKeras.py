@@ -1,168 +1,214 @@
+from optparse import OptionParser
 import numpy as np
+import time,os
 from keras import Input
 from keras import Model
+from keras.callbacks import EarlyStopping
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
+from keras.layers import *
 from sklearn.feature_extraction.text import CountVectorizer
 from data.embeddings import WordEmbeddings
 from dataset_builder import MultilingualDataset
-import sys
-
-# import tensorflow as tf
-# print(tf.test.gpu_device_name())
-
-# from keras import backend as K
-# print(K.tensorflow_backend._get_available_gpus())
-
-# import tensorflow
-# from tensorflow.python.client import device_lib
-# print(device_lib.list_local_devices())
-
-# sys.exit()
-from util.evaluation import evaluation_metrics
-
-# basedir = '/media/moreo/1TB Volume/Datasets/PolylingualEmbeddings'
-# dataset = '/media/moreo/1TB Volume/Datasets/RCV2/rcv1-2_doclist_trByLang1000_teByLang1000_processed_run0.pickle'
-basedir = '/home/moreo/CLESA/PolylingualEmbeddings'
-dataset = '/home/moreo/CLESA/rcv2/rcv1-2_doclist_trByLang1000_teByLang1000_processed_run1.pickle'
-data = MultilingualDataset.load(dataset)
-langs = data.langs()
-
-lX, lY = data.training()
-lXte, lYte = data.test()
-
-nclasses = data.num_categories()
-
+from util.evaluation_keras import batchf1_keras
+from util.evaluation import evaluate, average_results
 import itertools
 
-def add_lang_prefix(docs, lang):
-    return [' '.join([lang+'-'+word for word in doc.split()]) for doc in docs]
+from util.results import PolylingualClassificationResults
 
-alltexts = list(itertools.chain.from_iterable([add_lang_prefix(lX[l], l) for l in langs]))
-trdocs = len(alltexts)
-tr_labels = list(itertools.chain.from_iterable([lY[l] for l in langs]))
-
-alltexts.extend(list(itertools.chain.from_iterable([add_lang_prefix(lXte[l],l) for l in langs])))
-te_labels = list(itertools.chain.from_iterable([lYte[l] for l in langs]))
-
-tokenizer = Tokenizer(filters='!"#$%&()*+,:./;<=>?@[\]^_`{|}~') # free the '-'
-tokenizer.fit_on_texts(alltexts)
-sequences = tokenizer.texts_to_sequences(alltexts)
-
-word_index = tokenizer.word_index
-print('Found %s unique tokens.' % len(word_index))
-
-MAX_SEQUENCE_LENGTH=200
-data = pad_sequences(sequences, maxlen=MAX_SEQUENCE_LENGTH)
-
-x_train = data[:trdocs]
-y_train = np.vstack(tr_labels)
-x_test = data[trdocs:]
-y_test = np.vstack(te_labels)
+parser = OptionParser()
+parser.add_option("-d", "--dataset", dest="dataset", help="Path to the multilingual dataset preprocessed and stored in .pickle format")
+parser.add_option("-w", "--we-path", dest="we_path", help="Path to the polylingual word embeddings")
+parser.add_option("-o", "--output", dest="output", help="Result file", type=str, default='./lstm_results.csv')
+parser.add_option("-b", "--batchsize", dest="batchsize", help="Batch size", type=int, default=250)
+parser.add_option("-l", "--lstmsize", dest="lstmsize", help="LSTM hidden size", type=int, default=512)
+parser.add_option("-f", "--densesize", dest="densesize", help="Dense layer size", type=int, default=512)
+parser.add_option("-L", "--maxlength", dest="maxlength", help="Max sentence length", type=int, default=200)
+parser.add_option("-e", "--trainembedding", dest="trainembedding", help="Trainable embeddings (1=train(default) 0=fixed)", type=int, default=1)
 
 
-strip_accents=CountVectorizer(strip_accents='unicode').build_analyzer()
-EMBEDDING_DIM = 300
-embedding_matrix = np.zeros((len(word_index) + 1, EMBEDDING_DIM))
-empty=0
-for lang in langs:
-    pwe = WordEmbeddings.load(basedir, lang, word_preprocessor=strip_accents)
-    embeddings_index = pwe.worddim
+def DataLoad(dataset_path, embeddings_path):
+    print('Loading dataset from ' + dataset_path)
+    data = MultilingualDataset.load(dataset_path)  # this dataset is assumed to be preprocessed
 
-    for word, i in word_index.items():
-        lang_prefix,word=word.split('-')
-        if lang_prefix==lang:
-            embedding_vector = embeddings_index.get(word)
-            if embedding_vector is not None:
-                # words not found in embedding index will be all-zeros.
-                embedding_matrix[i] = embedding_vector
-            else:
-                empty+=1
+    langs = data.langs()
+    lXtr, lY = data.training()
+    lXte, lYte = data.test()
+    nclasses = data.num_categories()
 
-print('empty vectors={}'.format(empty))
+    print('Loading Polylingual Word Embeddings from ' + embeddings_path)
+    pwe = {}
+    strip_accents = CountVectorizer(strip_accents='unicode').build_analyzer()
+    for lang in langs:
+        pwe[lang] = WordEmbeddings.load(embeddings_path, lang, word_preprocessor=strip_accents)
 
-from keras.layers import Embedding, Conv1D, MaxPooling1D, Flatten, Dense, LSTM, Dropout
+    return langs, (lXtr, lY), (lXte, lYte), nclasses, pwe, data.dataset_name
 
-trainable=True
-embedding_layer = Embedding(len(word_index) + 1,
-                            EMBEDDING_DIM,
-                            weights=[embedding_matrix],
-                            input_length=MAX_SEQUENCE_LENGTH,
-                            trainable=trainable)
 
-# lo lance con trainable a True
+def PrepareData(lXtr, lY, lXte, lYte, mask_unknown=False):
+    def add_lang_prefix(docs, lang):
+        vocab = pwe[lang].vocabulary()
 
-def CNN():
-    sequence_input = Input(shape=(MAX_SEQUENCE_LENGTH,), dtype='int32')
-    embedded_sequences = embedding_layer(sequence_input)
-    x = Conv1D(128, 5, activation='relu')(embedded_sequences)
-    x = MaxPooling1D(5)(x)
-    x = Conv1D(128, 5, activation='relu')(x)
-    x = MaxPooling1D(5)(x)
-    x = Conv1D(128, 5, activation='relu')(x)
-    x = MaxPooling1D(5)(x)  # global max pooling
-    x = Flatten()(x)
-    x = Dense(128, activation='relu')(x)
-    preds = Dense(nclasses, activation='sigmoid')(x)
-    model = Model(inputs=sequence_input, outputs=preds)
-    return model
+        def add_prefix(word):
+            return lang + LANG_PREFIX + word if (
+            word in vocab or mask_unknown == False) else lang + LANG_PREFIX + 'unktoken'  # works much better without grouping unknown words
 
-def RNN():
+        return [' '.join([add_prefix(word) for word in doc.split()]) for doc in docs]
+
+    alltexts = list(itertools.chain.from_iterable([add_lang_prefix(lXtr[l], l) for l in langs]))
+    trdocs = len(alltexts)
+    tr_labels = list(itertools.chain.from_iterable([lY[l] for l in langs]))
+
+    alltexts.extend(list(itertools.chain.from_iterable([add_lang_prefix(lXte[l], l) for l in langs])))
+    te_labels = list(itertools.chain.from_iterable([lYte[l] for l in langs]))
+
+    tokenizer = Tokenizer(filters='!"#$%&()*+,:./;<=>?@[\]^_`{|}~')  # free the LANG_PREFIX='-'
+    tokenizer.fit_on_texts(alltexts)
+    sequences = tokenizer.texts_to_sequences(alltexts)
+
+    word_index = tokenizer.word_index
+    print('Found %s unique tokens.' % len(word_index))
+
+    data = pad_sequences(sequences, maxlen=MAX_SEQUENCE_LENGTH)
+
+    x_train = data[:trdocs]
+    y_train = np.vstack(tr_labels)
+    x_test = data[trdocs:]
+    y_test = np.vstack(te_labels)
+
+    return (x_train, y_train), (x_test, y_test), word_index
+
+
+def PrepareEmbeddingMatrix(pwe, word_index):
+    embedding_matrix = np.zeros((len(word_index) + 1, EMBEDDING_DIM))
+    empty = 0
+    for lang in langs:
+        embeddings_index = pwe[lang].worddim
+        for word, i in word_index.items():
+            assert i != 0, '0 index is reserved for pad'
+            lang_prefix, word = word.split(LANG_PREFIX)
+            if lang_prefix == lang:
+                embedding_vector = embeddings_index.get(word)
+                if embedding_vector is not None:
+                    # words not found in embedding index will be all-zeros.
+                    embedding_matrix[i] = embedding_vector
+                else:
+                    empty += 1
+    print('empty vectors={}'.format(empty))
+
+    return embedding_matrix
+
+def get_loffset(lX):
+    loffsets = {}
+    offset=0
+    for l in langs:
+        end=offset + len(lX[l])
+        loffsets[l]=(offset,end)
+        offset=end
+    return loffsets
+
+def pack_by_lang(X,loffsets):
+    lX = {}
+    for l in loffsets.keys():
+        start,end = loffsets[l]
+        lX[l] = X[start:end]
+    return lX
+
+def RNN(embedding_matrix, trainable, lstmsize, densesize):
+    embedding_layer = Embedding(len(word_index) + 1,
+                                EMBEDDING_DIM,
+                                weights=[embedding_matrix],
+                                input_length=MAX_SEQUENCE_LENGTH,
+                                trainable=trainable)
+
     sequence_input = Input(shape=(MAX_SEQUENCE_LENGTH,), dtype='int32')
     layer = embedding_layer(sequence_input)
-    layer = LSTM(64)(layer)
-    layer = Dense(256,activation='relu')(layer)
+    # layer = Dropout(0.5)(layer)
+    layer = LSTM(lstmsize, dropout=0.5, recurrent_dropout=0.5)(layer)
+    layer = Dense(densesize, activation='relu')(layer)
     layer = Dropout(0.5)(layer)
     layer = Dense(nclasses, activation='sigmoid')(layer)
-    model = Model(inputs=sequence_input,outputs=layer)
+    model = Model(inputs=sequence_input, outputs=layer)
+
     return model
 
+if __name__=='__main__':
+    (op, args) = parser.parse_args()
 
-from keras import backend as K
-def f1(y_true, y_pred):
-    def recall(y_true, y_pred):
-        """Recall metric.
+    dataset_path = op.dataset
+    embeddings_path = op.we_path
 
-        Only computes a batch-wise average of recall.
+    batch_size = op.batchsize
+    lstmsize = op.lstmsize
+    densesize = op.densesize
+    trainable=op.trainembedding==1
+    MAX_SEQUENCE_LENGTH=op.maxlength
+    method_config = 'LSTM_b{}_h{}_ff{}_e{}_L{}'.format(batch_size, lstmsize, densesize, trainable, MAX_SEQUENCE_LENGTH)
+    print('Running ',method_config)
 
-        Computes the recall, a metric for multi-label classification of
-        how many relevant items are selected.
-        """
-        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-        possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
-        recall = true_positives / (possible_positives + K.epsilon())
-        return recall
+    LANG_PREFIX='-'
+    EMBEDDING_DIM = 300
 
-    def precision(y_true, y_pred):
-        """Precision metric.
+    results = PolylingualClassificationResults(op.output)
 
-        Only computes a batch-wise average of precision.
+    langs, (lXtr, lY), (lXte, lYte), nclasses, pwe, datasetname = DataLoad(dataset_path, embeddings_path)
+    (x_train, y_train), (x_test, y_test), word_index = PrepareData(lXtr, lY, lXte, lYte, mask_unknown=trainable==False)
+    embedding_matrix = PrepareEmbeddingMatrix(pwe, word_index)
+    del pwe
 
-        Computes the precision, a metric for multi-label classification of
-        how many selected items are relevant.
-        """
-        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-        predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
-        precision = true_positives / (predicted_positives + K.epsilon())
-        return precision
-    precision = precision(y_true, y_pred)
-    recall = recall(y_true, y_pred)
-    return 2*((precision*recall)/(precision+recall+K.epsilon()))
+    optimizer = 'rmsprop'
+    model = RNN(embedding_matrix, trainable, lstmsize, densesize)
+    model.compile(loss='binary_crossentropy',
+                  optimizer=optimizer,
+                  metrics=[batchf1_keras])
 
-model = RNN()
-model.compile(loss='binary_crossentropy',
-              optimizer='rmsprop',
-              # optimizer='adam',
-              metrics=['acc', f1])
+    tinit = time.time()
+    epochs = 200
+    earlystop = EarlyStopping(monitor='val_'+batchf1_keras.__name__, patience=10, restore_best_weights=True, mode='max')
+    history = model.fit(x_train, y_train,
+                        validation_data=(x_test, y_test),
+                        epochs=epochs,
+                        batch_size=batch_size,
+                        shuffle=True,
+                        callbacks=[earlystop])
 
-batch_size = 500
-model.fit(x_train, y_train, validation_data=(x_test, y_test),
-          epochs=1000, batch_size=batch_size, shuffle=True)
+    tr_time = time.time()-tinit
+
+    loffsets_test = get_loffset(lXte)
+
+    print('LSTM-evaluation')
+    probs = model.predict(x_test, batch_size=batch_size)
+    y_lstm = 1 * (probs > 0.5)
+    y_lstm = pack_by_lang(y_lstm, loffsets_test)
+    l_eval = evaluate(lYte, y_lstm)
+    grand_totals = average_results(l_eval, show=True)
+    print('epochs={} batch={} lstmsize={} densesize={}'.format(epochs, batch_size,lstmsize,densesize))
 
 
-probs = model.predict(x_test, batch_size=batch_size)
-yte_ = 1*(probs>0.5)
-Mf1, mf1, Mk, mK = evaluation_metrics(y_test, yte_)
-print('Eval: {:.3f} {:.3f} {:.3f} {:.3f}'.format(Mf1, mf1, Mk, mK))
+    dataset_file = os.path.basename(op.dataset)
+    result_id = dataset_file+'__'+method_config
+    for lang in l_eval.keys():
+        macrof1, microf1, macrok, microk = l_eval[lang]
+        results.add_row(result_id, method_config, 'keras-lstm', optimizer, datasetname, '', '', tr_time, lang, macrof1, microf1, macrok, microk, notes='')
 
-print('trainable={}'.format(trainable))
+
+    # import matplotlib.pyplot as plt
+    # plt.plot(history.history['loss'])
+    # plt.plot(history.history['val_loss'])
+    # plt.title('Model loss')
+    # plt.ylabel('Loss')
+    # plt.xlabel('Epoch')
+    # plt.legend(['Train', 'Test'], loc='upper left')
+    # plt.show()
+    #
+    # plt.plot(history.history[batchf1_keras.__name__])
+    # plt.plot(history.history['val_'+batchf1_keras.__name__])
+    # plt.title('Classification performance')
+    # plt.ylabel('F1')
+    # plt.xlabel('Epoch')
+    # plt.legend(['Train', 'Test'], loc='upper left')
+    # plt.show()
+
+    model.summary()
+    # from keras.utils import plot_model
+    # plot_model(model, to_file='model.png')

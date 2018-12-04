@@ -161,7 +161,7 @@ if __name__=='__main__':
                                                                       c_parameters=get_params(), y_parameters=get_params(), n_jobs=op.n_jobs)
 
             classifier.fit(data.lXtr(), data.lYtr(), single_label=op.singlelabel)
-            l_eval = evaluate(classifier, {lang:data.lXte()[lang]}, {lang:data.lYte()[lang]})
+            l_eval = evaluate_method(classifier, {lang:data.lXte()[lang]}, {lang:data.lYte()[lang]})
 
             #for lang in data.langs():
             macrof1, microf1, macrok, microk = l_eval[lang]

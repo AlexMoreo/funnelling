@@ -62,7 +62,7 @@ if __name__=='__main__':
                                          n_jobs=-1)
 
         classifier.fit(lXtr, lytr)
-        l_eval = evaluate(classifier, lXte, lyte)
+        l_eval = evaluate_method(classifier, lXte, lyte)
 
         metrics  = []
         for lang in lXte.keys():

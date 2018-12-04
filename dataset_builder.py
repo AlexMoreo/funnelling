@@ -91,8 +91,7 @@ class MultilingualDataset:
         if hasattr(self, 'languages_view'):
             langs = self.languages_view
         else:
-            langs =  list(self.multiling_dataset.keys())
-        langs.sort()
+            langs =  sorted(self.multiling_dataset.keys())
         return langs
 
     def num_categories(self):

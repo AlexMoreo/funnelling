@@ -1,4 +1,5 @@
 import util.disable_sklearn_warnings
+from sklearn.svm import SVC
 import os,sys
 from dataset_builder import MultilingualDataset
 from feature_selection.round_robin import RoundRobin
@@ -183,17 +184,14 @@ if __name__=='__main__':
 
 
     classifier.fit(lXtr, lytr)
-    l_eval = evaluate(classifier, lXte, lyte)
+    l_eval = evaluate_method(classifier, lXte, lyte)
+    grand_totals = average_results(l_eval, show=True)
 
     if op.calmode!='cal': # the default value does not add a postfix to the method name
         op.mode += op.calmode
 
-    metrics  = []
     for lang in lXte.keys():
         macrof1, microf1, macrok, microk = l_eval[lang]
-        metrics.append([macrof1, microf1, macrok, microk])
-        print('Lang %s: macro-F1=%.3f micro-F1=%.3f' % (lang, macrof1, microf1))
         notes=op.note + ('C='+str(op.set_c) if op.set_c!=1 else '') + str(classifier.best_params() if op.optimc else '')
         results.add_row(result_id, op.mode, 'svm', op.optimc, data.dataset_name, op.binary, op.lang_ablation, classifier.time, lang, macrof1, microf1, macrok, microk, notes=notes)
 
-    print('Averages: MF1, mF1, MK, mK', np.mean(np.array(metrics), axis=0))
