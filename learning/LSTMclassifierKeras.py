@@ -86,14 +86,18 @@ def PrepareEmbeddingMatrix(pwe, word_index):
         embeddings_index = pwe[lang].worddim
         for word, i in word_index.items():
             assert i != 0, '0 index is reserved for pad'
-            lang_prefix, word = word.split(LANG_PREFIX)
-            if lang_prefix == lang:
-                embedding_vector = embeddings_index.get(word)
-                if embedding_vector is not None:
-                    # words not found in embedding index will be all-zeros.
-                    embedding_matrix[i] = embedding_vector
-                else:
-                    empty += 1
+            pre_word = word.split(LANG_PREFIX)
+            if len(pre_word)==2:
+                lang_prefix, word = pre_word
+                if lang_prefix == lang:
+                    embedding_vector = embeddings_index.get(word)
+                    if embedding_vector is not None:
+                        # words not found in embedding index will be all-zeros.
+                        embedding_matrix[i] = embedding_vector
+                    else:
+                        empty += 1
+            else:
+                print('unparsable token {}'.format(word))
     print('empty vectors={}'.format(empty))
 
     return embedding_matrix
