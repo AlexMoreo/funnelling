@@ -194,12 +194,6 @@ if __name__=='__main__':
     maskunknown=op.maskunknown==1
     trainable=op.trainembedding==1
     MAX_SEQUENCE_LENGTH=op.maxlength
-    parser.add_option("-m", "--maskunknown", dest="maskunknown", help="Mask unknown words (1=True 0=False(default))",
-                      type=int, default=0)
-    parser.add_option("-E", "--nepochs", dest="nepochs", help="Number of epochs (default=100)", type=int, default=100)
-    parser.add_option("-p", "--patience", dest="patience", help="Patience for Early-Stop (default=10)", type=int,
-                      default=10)
-
     method_config = 'LSTM_b{}_h{}_ff{}_e{}_L{}_m{}_E{}_p{}'.format(
         op.batch_size, op.lstmsize, op.densesize, trainable, MAX_SEQUENCE_LENGTH, maskunknown, op.nepochs, op.patience
     )
