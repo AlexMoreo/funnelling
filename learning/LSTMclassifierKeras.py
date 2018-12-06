@@ -195,7 +195,7 @@ if __name__=='__main__':
     trainable=op.trainembedding==1
     MAX_SEQUENCE_LENGTH=op.maxlength
     method_config = 'LSTM_b{}_h{}_ff{}_e{}_L{}_m{}_E{}_p{}'.format(
-        op.batch_size, op.lstmsize, op.densesize, trainable, MAX_SEQUENCE_LENGTH, maskunknown, op.nepochs, op.patience
+        op.batchsize, op.lstmsize, op.densesize, trainable, MAX_SEQUENCE_LENGTH, maskunknown, op.nepochs, op.patience
     )
     print('Running ',method_config)
 
