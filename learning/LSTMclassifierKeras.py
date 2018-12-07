@@ -58,14 +58,28 @@ def DataLoad(dataset_path, embeddings_path):
 
 
 def PrepareData(lXtr, lYtr, lXte, lYte, mask_unknown=False):
+
+    def is_number(s):
+        try:
+            float(s)
+            return True
+        except ValueError:
+            return False
+
+
     def add_lang_prefix(docs, lang):
         vocab = pwe[lang].vocabulary()
 
         def add_prefix(word):
-            return lang + LANG_PREFIX + word if (
-            word in vocab or mask_unknown == False) else lang + LANG_PREFIX + 'unktoken'  # works much better without grouping unknown words
+            if is_number(word):
+                return lang + LANG_PREFIX + 'wordtoken'
+            elif mask_unknown == False or word in vocab:
+                return lang + LANG_PREFIX + word
+            else:
+                return lang + LANG_PREFIX + 'unktoken'  # works much better without grouping unknown words
 
         return [' '.join([add_prefix(word) for word in doc.split()]) for doc in docs]
+
 
     print('')
     alltexts = list(itertools.chain.from_iterable([add_lang_prefix(lXtr[l], l) for l in langs]))
@@ -76,6 +90,7 @@ def PrepareData(lXtr, lYtr, lXte, lYte, mask_unknown=False):
     te_labels = list(itertools.chain.from_iterable([lYte[l] for l in langs]))
 
     docwords = [doc.split() for doc in alltexts]
+
     lengths = [len(doc_i_words) for doc_i_words in docwords]
     print('ave(length)={:.2f}'.format(np.mean(lengths)))
     print('std(length)={:.2f}'.format(np.std(lengths)))
@@ -85,6 +100,7 @@ def PrepareData(lXtr, lYtr, lXte, lYte, mask_unknown=False):
     # we cut sequences longer than MAX_SEQUENCE_LENGTH *before* calling the tokenizer to prevent if from assigning
     # ids to unused tokens
     alltexts=[' '.join(doc_i_words[-MAX_SEQUENCE_LENGTH:]) for doc_i_words in docwords]
+
 
     tokenizer = Tokenizer(filters='')  # text is already preprocessed, so we want to tokenize words exclusively on spaces
     tokenizer.fit_on_texts(alltexts)
