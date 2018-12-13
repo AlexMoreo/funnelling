@@ -2,6 +2,7 @@ from sklearn.externals.joblib import Parallel, delayed
 from util.metrics import *
 from sklearn.metrics import f1_score
 import numpy as np
+import time
 
 def evaluation_metrics(y, y_):
     if len(y.shape)==len(y_.shape)==1 and len(np.unique(y))>2: #single-label
@@ -38,7 +39,8 @@ def average_results(l_eval, show=True):
     return ave
 
 
-def evaluate_method(polylingual_method, lX, ly, predictor=None, soft=False):
+def evaluate_method(polylingual_method, lX, ly, predictor=None, soft=False, return_time=False):
+    tinit=time.time()
     print('prediction for test')
     assert set(lX.keys()) == set(ly.keys()), 'inconsistent dictionaries in evaluate'
     n_jobs = polylingual_method.n_jobs
@@ -51,7 +53,11 @@ def evaluate_method(polylingual_method, lX, ly, predictor=None, soft=False):
         metrics = soft_evaluation_metrics
     ly_ = predictor(lX)
 
-    return evaluate(ly, ly_, metrics=metrics, n_jobs=n_jobs)
+    eval_ = evaluate(ly, ly_, metrics=metrics, n_jobs=n_jobs)
+    if return_time:
+        return eval_, time.time()-tinit
+    else:
+        return eval_
 
 def evaluate_single_lang(polylingual_method, X, y, lang, predictor=None, soft=False):
     print('prediction for test in a single language')

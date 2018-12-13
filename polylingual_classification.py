@@ -170,22 +170,20 @@ if __name__=='__main__':
         lW = pickle.load(open(op.wiki, 'rb')) # to be preprocessed
         classifier = PLDAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(dense=True),
                                                nTopics=400, iterations=2000, max_wiki=2500, n_jobs=-1)
-
     elif op.mode == 'kcca':
         lW = pickle.load(open(op.dataset.replace('.pickle', '.wiki.pickle'), 'rb'))
 
         print('Learning KCCA-based Classifier')
         classifier = KCCAPolylingualClassifier(base_learner=get_learner(kernel='rbf'), lW=lW, z_parameters=get_params(dense=True),
                                                numCC=1000, reg=op.kccareg, max_wiki=2000, n_jobs=op.n_jobs)
-
-
     else:
         raise ValueError('Unknown mode {}'.format(op.mode))
 
 
 
     classifier.fit(lXtr, lytr)
-    l_eval = evaluate_method(classifier, lXte, lyte)
+    tr_time = classifier.time
+    l_eval, te_time = evaluate_method(classifier, lXte, lyte, return_time=True)
     grand_totals = average_results(l_eval, show=True)
 
     if op.calmode!='cal': # the default value does not add a postfix to the method name
@@ -193,6 +191,6 @@ if __name__=='__main__':
 
     for lang in lXte.keys():
         macrof1, microf1, macrok, microk = l_eval[lang]
-        notes=op.note + ('C='+str(op.set_c) if op.set_c!=1 else '') + str(classifier.best_params() if op.optimc else '')
-        results.add_row(result_id, op.mode, 'svm', op.optimc, data.dataset_name, op.binary, op.lang_ablation, classifier.time, lang, macrof1, microf1, macrok, microk, notes=notes)
+        notes=op.note + ('C='+str(op.set_c) if op.set_c!=1 else '') + str(classifier.best_params() if op.optimc else '') + (' te_time: {:.1f}'.format(te_time))
+        results.add_row(result_id, op.mode, 'svm', op.optimc, data.dataset_name, op.binary, op.lang_ablation, tr_time, lang, macrof1, microf1, macrok, microk, notes=notes)
 

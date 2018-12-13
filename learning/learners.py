@@ -386,7 +386,7 @@ class KCCAPolylingualClassifier:
 
     def predict(self, lX):
         assert self.kcca is not None, 'KCCA predict called before fit'
-        lZ = self.transform(lX)
+        lZ = self.transform(lX, accum_time=False)
         return self.predict_from_transformed(lZ)
 
     def best_params(self):
