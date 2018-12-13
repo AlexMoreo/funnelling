@@ -33,7 +33,8 @@ parser.add_option("-j", "--n_jobs", dest="n_jobs",type=int,
                   help="Number of parallel jobs (default is -1, all)", default=-1)
 parser.add_option("-s", "--set_c", dest="set_c",type=float,
                   help="Set the C parameter", default=1)
-
+parser.add_option("-r", "--kccareg", dest="kccareg",type=float,
+                  help="Set the regularization parameter for KCCA", default=1)
 parser.add_option("-w", "--we-path", dest="we_path",
                   help="Path to the polylingual word embeddings (required only if --mode polyembeddings)")
 parser.add_option("-W", "--wiki", dest="wiki",
@@ -58,8 +59,8 @@ Last changes:
 #reales es artificial
 #note: really make_scorer(macroF1) seems to be better with the actual loss [tough not significantly]
 
-def get_learner(calibrate=False):
-    return SVC(kernel='linear', probability=calibrate, cache_size=1000, C=op.set_c, random_state=1)
+def get_learner(calibrate=False, kernel='linear'):
+    return SVC(kernel=kernel, probability=calibrate, cache_size=1000, C=op.set_c, random_state=1)
 
 def get_params(dense=False):
     if not op.optimc:
@@ -174,8 +175,8 @@ if __name__=='__main__':
         lW = pickle.load(open(op.dataset.replace('.pickle', '.wiki.pickle'), 'rb'))
 
         print('Learning KCCA-based Classifier')
-        classifier = KCCAPolylingualClassifier(base_learner=get_learner(), lW=lW, z_parameters=get_params(dense=True),
-                                               numCC=1000, reg=100, max_wiki=2000, n_jobs=op.n_jobs)
+        classifier = KCCAPolylingualClassifier(base_learner=get_learner(kernel='rbf'), lW=lW, z_parameters=get_params(dense=True),
+                                               numCC=1000, reg=op.kccareg, max_wiki=2000, n_jobs=op.n_jobs)
 
 
     else:

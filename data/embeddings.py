@@ -22,6 +22,7 @@ class WordEmbeddings:
             word_registry=set()
             lines = open(we_path).readlines()
             nwords, dims = [int(x) for x in lines[0].split()]
+            print('reading we of {} dimensions'.format(dims))
             we = np.zeros((nwords, dims), dtype=float)
             worddim = {}
             index = 0

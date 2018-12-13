@@ -38,7 +38,7 @@ def DataLoad(dataset_path, embeddings_path):
     print('Loading dataset from ' + dataset_path)
     data = MultilingualDataset.load(dataset_path)  # this dataset is assumed to be preprocessed
 
-    # data.set_view(languages=data.langs()[:3])
+    data.set_view(languages=data.langs()[:2])
 
     langs = data.langs()
     lXtr, lYTr = data.training()
@@ -156,6 +156,7 @@ def PrepareEmbeddingMatrix(pwe, word_index):
                         # words not found in embedding index will be all-zeros.
                         embedding_matrix[i] = embedding_vector
                     else:
+                        print('empty={}'.format(word))
                         empty += 1
             else:
                 print('unparsable token {}'.format(word))
