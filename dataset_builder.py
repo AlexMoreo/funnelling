@@ -5,17 +5,22 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from data.reader.jrcacquis_reader import *
 from data.languages import lang_set, NLTK_LANGMAP, RCV2_LANGS_WITH_NLTK_STEMMING
 from data.reader.rcv_reader import fetch_RCV1, fetch_RCV2, fetch_topic_hierarchy
-from data.reader.reuters21578_reader import fetch_reuters21579
 from data.reader.wikipedia_tools import fetch_wikipedia_multilingual, random_wiki_sample
-from data.text_preprocessor import NLTKLemmaTokenizer, preprocess_documents
+from data.text_preprocessor import NLTKStemTokenizer, preprocess_documents
 import pickle
 import numpy as np
-from random import shuffle
 from sklearn.model_selection import train_test_split
 from scipy.sparse import issparse
 import itertools
 
+
 class MultilingualDataset:
+    """
+    A multilingual dataset is a dictionary of training and test documents indexed by language code.
+    Train and test sets are represented as tuples of the type (X,Y,ids), where X is a matrix representation of the
+    documents (e.g., a document-by-term sparse csr_matrix), Y is a document-by-label binary np.array indicating the
+    labels of each document, and ids is a list of document-identifiers from the original collection.
+    """
 
     def __init__(self):
         self.dataset_name = ""
@@ -46,7 +51,6 @@ class MultilingualDataset:
         tr_ids = {lang:tr_ids for (lang,((_,_,tr_ids), (_,_,_))) in data.multiling_dataset.items()}
         te_ids = {lang: te_ids for (lang, ((_, _, _), (_, _, te_ids))) in data.multiling_dataset.items()}
         return tr_ids, te_ids
-
 
     def sort_indexes(self):
         for (lang, ((Xtr,_,_),(Xte,_,_))) in self.multiling_dataset.items():
@@ -123,24 +127,13 @@ class MultilingualDataset:
 
         return accum_tr, accum_te, in_langs
 
-
     def set_labels(self, labels):
         self.labels = labels
 
-def apply_single_label_fragment_selection(train_doclist, test_doclist):
-    train_doclist = single_label_fragment(train_doclist)
-    test_doclist = single_label_fragment(test_doclist)
-    active_labels = get_active_labels(train_doclist)
-    filter_by_categories(test_doclist, active_labels)
-    test_doclist = [d for d in test_doclist if d.categories]
-    return train_doclist, test_doclist, active_labels
 
-def single_label_fragment(doclist):
-    single = [d for d in doclist if len(d.categories)==1]
-    final_categories = set([d.categories[0] for d in single if d.categories])
-    print('{} single-label documents ({} categories) from the original {} documents'.format(len(single), len(final_categories), len(doclist)))
-    return single
-
+# ----------------------------------------------------------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------------------------------------------------------
 def get_active_labels(doclist):
     cat_list = set()
     for d in doclist:
@@ -152,27 +145,40 @@ def filter_by_categories(doclist, keep_categories):
     for d in doclist:
         d.categories = list(set(d.categories).intersection(catset))
 
+def __years_to_str(years):
+    if isinstance(years, list):
+        if len(years) > 1:
+            return str(years[0])+'-'+str(years[-1])
+        return str(years[0])
+    return str(years)
 
-# creates a MultilingualDataset where matrices lie in language-specific feature spaces
-def build_independent_matrices(dataset_name, langs, training_docs, test_docs, label_names, wiki_docs=[], preprocess=True, singlelabel=False):
+
+# ----------------------------------------------------------------------------------------------------------------------
+# Matrix builders
+# ----------------------------------------------------------------------------------------------------------------------
+def build_independent_matrices(dataset_name, langs, training_docs, test_docs, label_names, wiki_docs=[], preprocess=True):
     """
+    Builds the document-by-term weighted matrices for each language. Representations are independent of each other,
+    i.e., each language-specific matrix lies in a dedicate feature space.
+    :param dataset_name: the name of the dataset (str)
     :param langs: list of languages (str)
     :param training_docs: map {lang:doc-list} where each doc is a tuple (text, categories, id)
     :param test_docs: map {lang:doc-list} where each doc is a tuple (text, categories, id)
-    :param label_names: list of names (str)
-    :param wiki_docs: doc-list
-    :return:
+    :param label_names: list of names of labels (str)
+    :param wiki_docs: doc-list (optional), if specified, project all wiki docs in the feature spaces built for the languages
+    :param preprocess: whether or not to apply language-specific text preprocessing (stopword removal and stemming)
+    :return: a MultilingualDataset. If wiki_docs has been specified, a dictionary lW is also returned, which indexes
+    by language the processed wikipedia documents in their respective language-specific feature spaces
     """
 
-    # if not singlelabel:
     mlb = MultiLabelBinarizer()
     mlb.fit([label_names])
 
     lW = {}
 
-    multiling_dataset = MultilingualDataset()
-    multiling_dataset.dataset_name=dataset_name
-    multiling_dataset.set_labels(mlb.classes_)
+    multilingual_dataset = MultilingualDataset()
+    multilingual_dataset.dataset_name = dataset_name
+    multilingual_dataset.set_labels(mlb.classes_)
     for lang in langs:
         print("\nprocessing %d training, %d test, %d wiki for language <%s>" %
               (len(training_docs[lang]), len(test_docs[lang]), len(wiki_docs[lang]) if wiki_docs else 0, lang))
@@ -182,7 +188,7 @@ def build_independent_matrices(dataset_name, langs, training_docs, test_docs, la
 
         if preprocess:
             tfidf = TfidfVectorizer(strip_accents='unicode', min_df=3, sublinear_tf=True,
-                                    tokenizer=NLTKLemmaTokenizer(lang, verbose=True),
+                                    tokenizer=NLTKStemTokenizer(lang, verbose=True),
                                     stop_words=stopwords.words(NLTK_LANGMAP[lang]))
         else:
             tfidf = TfidfVectorizer(strip_accents='unicode', min_df=3, sublinear_tf=True)
@@ -192,31 +198,38 @@ def build_independent_matrices(dataset_name, langs, training_docs, test_docs, la
         if wiki_docs:
             lW[lang] = tfidf.transform(wiki_docs[lang])
 
-        # if singlelabel:
-        #     Ytr = np.array(tr_labels).flatten()
-        #     Yte = np.array(te_labels).flatten()
-        #     assert len(Ytr) == Xtr.shape[0] and len(Yte) == Xte.shape[0], 'wrong size encountered in single-label fragment'
-        # else:
         Ytr = mlb.transform(tr_labels)
         Yte = mlb.transform(te_labels)
 
-        multiling_dataset.add(lang, Xtr, Ytr, Xte, Yte, IDtr, IDte)
+        multilingual_dataset.add(lang, Xtr, Ytr, Xte, Yte, IDtr, IDte)
 
-    multiling_dataset.show_dimensions()
-    multiling_dataset.show_category_prevalences()
+    multilingual_dataset.show_dimensions()
+    multilingual_dataset.show_category_prevalences()
 
     if wiki_docs:
-        return multiling_dataset, lW
+        return multilingual_dataset, lW
     else:
-        return multiling_dataset
+        return multilingual_dataset
+
 
 # creates a MultilingualDataset where matrices shares a single yuxtaposed feature space
-def build_juxtaposed_matrices(dataset_name, langs, training_docs, test_docs, label_names, preprocess=True, singlelabel=False):
+def build_juxtaposed_matrices(dataset_name, langs, training_docs, test_docs, label_names, preprocess=True):
+    """
+    Builds the document-by-term weighted matrices for each language. Representations are not independent of each other,
+    since all of them lie on the same yuxtaposed feature space.
+    :param dataset_name: the name of the dataset (str)
+    :param langs: list of languages (str)
+    :param training_docs: map {lang:doc-list} where each doc is a tuple (text, categories, id)
+    :param test_docs: map {lang:doc-list} where each doc is a tuple (text, categories, id)
+    :param label_names: list of names of labels (str)
+    :param preprocess: whether or not to apply language-specific text preprocessing (stopword removal and stemming)
+    :return: a MultilingualDataset. If wiki_docs has been specified, a dictionary lW is also returned, which indexes
+    by language the processed wikipedia documents in their respective language-specific feature spaces
+    """
 
     multiling_dataset = MultilingualDataset()
     multiling_dataset.dataset_name = dataset_name
 
-    # if not singlelabel:
     mlb = MultiLabelBinarizer()
     mlb.fit([label_names])
 
@@ -241,11 +254,6 @@ def build_juxtaposed_matrices(dataset_name, langs, training_docs, test_docs, lab
         (tr_data, tr_labels, tr_ID), (te_data, te_labels, te_ID) = multiling_dataset[lang]
         Xtr = tfidf.transform(tr_data)
         Xte = tfidf.transform(te_data)
-        # if singlelabel:
-        #     Ytr = np.array(tr_labels).flatten()
-        #     Yte = np.array(te_labels).flatten()
-        #     assert len(Ytr) == Xtr.shape[0] and len(Yte) == Xte.shape[0], 'wrong size encountered in single-label fragment'
-        # else:home
         Ytr = mlb.transform(tr_labels)
         Yte = mlb.transform(te_labels)
         multiling_dataset.add(lang,Xtr,Ytr,Xte,Yte,tr_ID,te_ID)
@@ -253,13 +261,10 @@ def build_juxtaposed_matrices(dataset_name, langs, training_docs, test_docs, lab
     multiling_dataset.show_dimensions()
     return multiling_dataset
 
-def __years_to_str(years):
-    if isinstance(years, list):
-        if len(years) > 1:
-            return str(years[0])+'-'+str(years[-1])
-        return str(years[0])
-    return str(years)
 
+# ----------------------------------------------------------------------------------------------------------------------
+# Methods to recover the original documents from the MultilingualDataset's ids
+# ----------------------------------------------------------------------------------------------------------------------
 """
 This method has been added a posteriori, to create document embeddings using the polylingual embeddings of the recent
 article 'Word Translation without Parallel Data'; basically, it takes one of the splits and retrieves the RCV documents
@@ -304,7 +309,7 @@ def retrieve_rcv_documents_from_dataset(datasetpath, rcv1_data_home, rcv2_data_h
     dataset.save(outpath)
 
 """
-Same thing but for jrc
+Same thing but for JRC-Acquis
 """
 def retrieve_jrc_documents_from_dataset(datasetpath, jrc_data_home, train_years, test_years, cat_policy, most_common_cat, outpath):
 
@@ -320,7 +325,6 @@ def retrieve_jrc_documents_from_dataset(datasetpath, jrc_data_home, train_years,
                                                  most_frequent=most_common_cat)
     test_docs, _ = fetch_jrcacquis(langs=langs, data_path=jrc_data_home, years=test_years, cat_filter=label_names,
                                    parallel='force')
-
 
     def filter_by_id(doclist, ids):
         ids_set = frozenset(itertools.chain.from_iterable(ids.values()))
@@ -349,15 +353,37 @@ def retrieve_jrc_documents_from_dataset(datasetpath, jrc_data_home, train_years,
 
     dataset.save(outpath)
 
+# ----------------------------------------------------------------------------------------------------------------------
+# Dataset Generators
+# ----------------------------------------------------------------------------------------------------------------------
+def prepare_jrc_datasets(jrc_data_home, wiki_data_home, langs, train_years, test_years, cat_policy, most_common_cat=-1, max_wiki=5000, run=0):
+    """
+    Prepare all datasets for JRC-Acquis. The datasets include the "feature-independent" version, the
+    "feature-yuxtaposed" version, the monolingual version for the UpperBound, and the processed wikipedia matrices.
+    In all cases, training documents are strictly non-parallel, and test documents are strictly parallel
+    :param jrc_data_home: path to the raw JRC-Acquis documents (it will be downloaded if not found), and the path where
+    all splits will be generated
+    :param wiki_data_home: path to the wikipedia dump (see data/readers/wikipedia_tools.py)
+    :param langs: the list of languages to consider (as defined in data/languages.py)
+    :param train_years: a list of ints containing the years to be considered as training documents
+    :param test_years: a list of ints containing the  years to be considered as test documents
+    :param cat_policy: a string indicating which category selection policy to apply. Valid policies are, e.g., "all"
+    (select all categories), "broadest" (select only the broadest concepts in the taxonomy), or "leaves" (select the
+    leaves concepts in the taxonomy). See inspect_eurovoc from data/reader/jrcacquis_reader.py for more details
+    :param most_common_cat: the maximum number of most common categories to consider, or -1 to keep them all
+    :param max_wiki: the maximum number of wikipedia documents to consider (default 5000)
+    :param run: a numeric label naming the random split (useful to keep track of different runs)
+    :return: None
+    """
 
-#generates the "feature-independent" and the "yuxtaposed" datasets
-def prepare_jrc_datasets(jrc_data_home, wiki_data_home, langs, train_years, test_years, cat_policy, most_common_cat=-1, max_wiki=5000, single_fragment=False, run=0):
-    name = 'JRCacquis'+('-singlelabel' if single_fragment else '')
+    name = 'JRCacquis'
+    run = '_run' + str(run)
+    config_name = 'jrc_nltk_' + __years_to_str(train_years) + \
+                  'vs' + __years_to_str(test_years) + \
+                  '_' + cat_policy + \
+                  ('_top' + str(most_common_cat) if most_common_cat!=-1 else '') + \
+                  '_noparallel_processed'
 
-    config_name = 'jrc_nltk_' + __years_to_str(train_years) + 'vs' + __years_to_str(test_years) + \
-                  '_' + cat_policy + ('_top' + str(most_common_cat) if most_common_cat!=-1 else '')+ '_noparallel_processed' +\
-                  ('_singlefragment' if single_fragment else '')
-    run = '_run'+str(run)
     indep_path = join(jrc_data_home, config_name + run + '.pickle')
     upper_path = join(jrc_data_home, config_name + run + '_upper.pickle')
     yuxta_path = join(jrc_data_home, config_name + run + '_yuxtaposed.pickle')
@@ -365,11 +391,11 @@ def prepare_jrc_datasets(jrc_data_home, wiki_data_home, langs, train_years, test
     wiki_docs_path = join(jrc_data_home, config_name + '.wiki.raw.pickle')
 
     cat_list = inspect_eurovoc(jrc_data_home, select=cat_policy)
-    training_docs, label_names = fetch_jrcacquis(langs=langs, data_path=jrc_data_home, years=train_years, cat_filter=cat_list, cat_threshold=1, parallel=None, most_frequent=most_common_cat)
-    test_docs, _ = fetch_jrcacquis(langs=langs, data_path=jrc_data_home, years=test_years, cat_filter=label_names, parallel='force')
-
-    if single_fragment:
-        training_docs, test_docs, label_names = apply_single_label_fragment_selection(training_docs, test_docs)
+    training_docs, label_names = fetch_jrcacquis(langs=langs, data_path=jrc_data_home, years=train_years,
+                                                 cat_filter=cat_list, cat_threshold=1, parallel=None,
+                                                 most_frequent=most_common_cat)
+    test_docs, _ = fetch_jrcacquis(langs=langs, data_path=jrc_data_home, years=test_years, cat_filter=label_names,
+                                   parallel='force')
 
     print('Generating feature-independent dataset...')
     training_docs_no_parallel = random_sampling_avoiding_parallel(training_docs)
@@ -381,51 +407,65 @@ def prepare_jrc_datasets(jrc_data_home, wiki_data_home, langs, train_years, test
     training_docs = _group_by_lang(training_docs, langs)
     training_docs_no_parallel = _group_by_lang(training_docs_no_parallel, langs)
     test_docs = _group_by_lang(test_docs, langs)
-    if True or not exists(indep_path):
-        #wiki_docs = []
-        #wiki_docs_path = wiki_path.replace('.pickle', '.raw.pickle')
-        if not exists(wiki_docs_path):
-            wiki_docs = fetch_wikipedia_multilingual(wiki_data_home, langs, min_words=50, deletions=False)
+    if not exists(indep_path):
+        wiki_docs=None
+        if max_wiki>0:
+            if not exists(wiki_docs_path):
+                wiki_docs = fetch_wikipedia_multilingual(wiki_data_home, langs, min_words=50, deletions=False)
+                wiki_docs = random_wiki_sample(wiki_docs, max_wiki)
+                pickle.dump(wiki_docs, open(wiki_docs_path, 'wb'), pickle.HIGHEST_PROTOCOL)
+            else:
+                wiki_docs = pickle.load(open(wiki_docs_path, 'rb'))
             wiki_docs = random_wiki_sample(wiki_docs, max_wiki)
-            pickle.dump(wiki_docs, open(wiki_docs_path, 'wb'), pickle.HIGHEST_PROTOCOL)
-        else:
-            wiki_docs = pickle.load(open(wiki_docs_path, 'rb'))
-        wiki_docs = random_wiki_sample(wiki_docs, max_wiki)
 
         if wiki_docs:
-            lang_data, wiki_docs = build_independent_matrices(name, langs, training_docs_no_parallel, test_docs, label_names, wiki_docs, singlelabel=single_fragment)
+            lang_data, wiki_docs = build_independent_matrices(name, langs, training_docs_no_parallel, test_docs, label_names, wiki_docs)
             pickle.dump(wiki_docs, open(wiki_path, 'wb'), pickle.HIGHEST_PROTOCOL)
         else:
-            lang_data = build_independent_matrices(name, langs, training_docs_no_parallel, test_docs, label_names, singlelabel=single_fragment)
+            lang_data = build_independent_matrices(name, langs, training_docs_no_parallel, test_docs, label_names)
 
         lang_data.save(indep_path)
 
-
     print('Generating upper-bound (English-only) dataset...')
-    if True or not exists(upper_path):
+    if not exists(upper_path):
         training_docs_eng_only = {'en':training_docs['en']}
         test_docs_eng_only = {'en':test_docs['en']}
-        build_independent_matrices(name, ['en'], training_docs_eng_only, test_docs_eng_only, label_names, singlelabel=single_fragment).save(upper_path)
+        build_independent_matrices(name, ['en'], training_docs_eng_only, test_docs_eng_only, label_names).save(upper_path)
 
     print('Generating yuxtaposed dataset...')
-    if True or not exists(yuxta_path):
-        build_juxtaposed_matrices(name, langs, training_docs_no_parallel, test_docs, label_names, singlelabel=single_fragment).save(yuxta_path)
+    if not exists(yuxta_path):
+        build_juxtaposed_matrices(name, langs, training_docs_no_parallel, test_docs, label_names).save(yuxta_path)
 
 
-# generates the "feature-independent" and the "yuxtaposed" datasets
 def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home, langs,
-                         train_for_lang=1000, test_for_lang=1000, max_wiki=5000, preprocess=True,
-                         single_fragment_for=None, run=0):
+                         train_for_lang=1000, test_for_lang=1000, max_wiki=5000, preprocess=True, run=0):
+    """
+        Prepare all datasets for RCV1/RCV2. The datasets include the "feature-independent" version, the
+        "feature-yuxtaposed" version, the monolingual version for the UpperBound, and the processed wikipedia matrices.
+
+        :param outpath: path where all splits will be dumped
+        :param rcv1_data_home: path to the RCV1-v2 dataset (English only)
+        :param rcv2_data_home: path to the RCV2 dataset (all languages other than English)
+        :param wiki_data_home: path to the wikipedia dump (see data/readers/wikipedia_tools.py)
+        :param langs: the list of languages to consider (as defined in data/languages.py)
+        :param train_for_lang: maximum number of training documents per language
+        :param test_for_lang:  maximum number of test documents per language
+        :param max_wiki: the maximum number of wikipedia documents to consider (default 5000)
+        :param preprocess: whether or not to apply language-specific preprocessing (stopwords removal and stemming)
+        :param run: a numeric label naming the random split (useful to keep track of different runs)
+        :return: None
+        """
 
     assert 'en' in langs, 'English is not in requested languages, but is needed for some datasets'
     assert len(langs)>1, 'the multilingual dataset cannot be built with only one dataset'
     assert not preprocess or set(langs).issubset(set(RCV2_LANGS_WITH_NLTK_STEMMING+['en'])), \
         "languages not in RCV1-v2/RCV2 scope or not in valid for NLTK's processing"
 
-    name = 'RCV1/2'+('-singlelabel' if single_fragment_for else '')
-    config_name = 'rcv1-2_nltk_trByLang'+str(train_for_lang)+'_teByLang'+str(test_for_lang)+\
-                  ('_processed' if preprocess else '_raw')+('singlefragment' if single_fragment_for else '')
+    name = 'RCV1/2'
     run = '_run' + str(run)
+    config_name = 'rcv1-2_nltk_trByLang'+str(train_for_lang)+'_teByLang'+str(test_for_lang)+\
+                  ('_processed' if preprocess else '_raw')
+
     indep_path = join(outpath, config_name + run + '.pickle')
     upper_path = join(outpath, config_name + run +'_upper.pickle')
     yuxta_path = join(outpath, config_name + run +'_yuxtaposed.pickle')
@@ -438,12 +478,6 @@ def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home
     filter_by_categories(rcv1_documents, labels_rcv2)
     filter_by_categories(rcv2_documents, labels_rcv1)
 
-    if single_fragment_for:
-        filter_by_categories(rcv1_documents, single_fragment_for)
-        filter_by_categories(rcv2_documents, single_fragment_for)
-        rcv1_documents = single_label_fragment(rcv1_documents)
-        rcv2_documents = single_label_fragment(rcv2_documents)
-
     label_names = get_active_labels(rcv1_documents+rcv2_documents)
     print('Active labels in RCV1/2 {}'.format(len(label_names)))
 
@@ -452,13 +486,13 @@ def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home
 
     lang_docs = {lang: [d for d in rcv1_documents + rcv2_documents if d.lang == lang] for lang in langs}
 
-    #for the upper bound there are no parallel versions, so for the English case, we take as many documents as there
+    # for the upper bound there are no parallel versions, so for the English case, we take as many documents as there
     # would be in the multilingual case -- then we will extract from them only train_for_lang for the other cases
     print('Generating upper-bound (English-only) dataset...')
     train, test = train_test_split(lang_docs['en'], train_size=train_for_lang*len(langs), test_size=test_for_lang, shuffle=True)
     train_lang_doc_map = {'en':[(d.text, d.categories, d.id) for d in train]}
     test_lang_doc_map = {'en':[(d.text, d.categories, d.id) for d in test]}
-    build_independent_matrices(name, ['en'], train_lang_doc_map, test_lang_doc_map, label_names, singlelabel=single_fragment_for).save(upper_path)
+    build_independent_matrices(name, ['en'], train_lang_doc_map, test_lang_doc_map, label_names).save(upper_path)
 
     train_lang_doc_map['en'] = train_lang_doc_map['en'][:train_for_lang]
     for lang in langs:
@@ -468,127 +502,66 @@ def prepare_rcv_datasets(outpath, rcv1_data_home, rcv2_data_home, wiki_data_home
         train_lang_doc_map[lang] = [(d.text, d.categories, d.id) for d in train]
         test_lang_doc_map[lang]  = [(d.text, d.categories, d.id) for d in test]
 
-    # for lang in train_lang_doc_map:
-    #     catcount = Counter()
-    #     for _,cats,_ in train_lang_doc_map[lang]:
-    #         catcount.update(cats)
-    #     print(lang, len(catcount))
-    #     for cat,count in catcount.most_common():
-    #         print(cat+'\t'+str(count))
-
     print('Generating feature-independent dataset...')
-    #wiki_docs_path = wiki_path.replace('.pickle','.raw.pickle')
-    #wiki_docs=[]
-    #wiki_docs_matrix=None
-    if not exists(wiki_docs_path):
-        wiki_docs = fetch_wikipedia_multilingual(wiki_data_home, langs, min_words=50, deletions=False)
+    wiki_docs=None
+    if max_wiki>0:
+        if not exists(wiki_docs_path):
+            wiki_docs = fetch_wikipedia_multilingual(wiki_data_home, langs, min_words=50, deletions=False)
+            wiki_docs = random_wiki_sample(wiki_docs, max_wiki)
+            pickle.dump(wiki_docs, open(wiki_docs_path, 'wb'), pickle.HIGHEST_PROTOCOL)
+        else:
+            wiki_docs = pickle.load(open(wiki_docs_path, 'rb'))
         wiki_docs = random_wiki_sample(wiki_docs, max_wiki)
-        pickle.dump(wiki_docs, open(wiki_docs_path, 'wb'), pickle.HIGHEST_PROTOCOL)
-    else:
-        wiki_docs = pickle.load(open(wiki_docs_path, 'rb'))
-    wiki_docs = random_wiki_sample(wiki_docs, max_wiki)
 
-    #wiki_docs = random_wiki_sample(wiki_docs, 50)
     if wiki_docs:
-        lang_data, wiki_docs_matrix = build_independent_matrices(name, langs, train_lang_doc_map, test_lang_doc_map, label_names, wiki_docs, preprocess, singlelabel=single_fragment_for)
+        lang_data, wiki_docs_matrix = build_independent_matrices(name, langs, train_lang_doc_map, test_lang_doc_map, label_names, wiki_docs, preprocess)
+        pickle.dump(wiki_docs_matrix, open(wiki_path, 'wb'), pickle.HIGHEST_PROTOCOL)
     else:
-        lang_data = build_independent_matrices(name, langs, train_lang_doc_map, test_lang_doc_map, label_names, wiki_docs, preprocess, singlelabel=single_fragment_for)
+        lang_data = build_independent_matrices(name, langs, train_lang_doc_map, test_lang_doc_map, label_names, wiki_docs, preprocess)
 
     lang_data.save(indep_path)
-    if wiki_docs:
-        pickle.dump(wiki_docs_matrix, open(wiki_path, 'wb'), pickle.HIGHEST_PROTOCOL)
 
     print('Generating yuxtaposed dataset...')
-    build_juxtaposed_matrices(name, langs, train_lang_doc_map, test_lang_doc_map, label_names, preprocess, singlelabel=single_fragment_for).save(yuxta_path)
+    build_juxtaposed_matrices(name, langs, train_lang_doc_map, test_lang_doc_map, label_names, preprocess).save(yuxta_path)
 
-def prepare_reuters21578(data_path=None, preprocess=True):
-
-    if not data_path:
-        data_path = get_data_home()
-
-    reuters_train = fetch_reuters21579(subset='train')
-    reuters_test = fetch_reuters21579(subset='test')
-
-    mlb = MultiLabelBinarizer()
-    mlb.fit(reuters_train.target)
-
-    multiling_dataset = MultilingualDataset()
-
-    nDtr = len(reuters_train.data)
-    nDte = len(reuters_test.data)
-    print("\nprocessing %d training and %d test for language en" % (nDtr, nDte))
-    if preprocess:
-        tfidf = TfidfVectorizer(strip_accents='unicode', min_df=3, sublinear_tf=True,
-                                    tokenizer=NLTKLemmaTokenizer('en', verbose=True),
-                                    stop_words=stopwords.words(NLTK_LANGMAP['en']))
-    else:
-        tfidf = TfidfVectorizer(strip_accents='unicode', min_df=3, sublinear_tf=True)
-
-    Xtr = tfidf.fit_transform(reuters_train.data)
-    Xte = tfidf.transform(reuters_test.data)
-    Ytr = mlb.transform(reuters_train.target)
-    Yte = mlb.transform(reuters_test.target)
-    Xtr.sort_indices()
-    Xte.sort_indices()
-
-    multiling_dataset.add('en', Xtr, Ytr, Xte, Yte, tr_ids=list(range(nDtr)), te_ids=list(range(nDtr, nDtr + nDte)))
-
-    multiling_dataset.show_dimensions()
-
-    outpath = join(data_path, 'reuters21578-multilingformat'+('-processed' if preprocess else '-raw')+'.pickle')
-    print('saving dataset in ' + outpath)
-    multiling_dataset.save(outpath)
-
-    return multiling_dataset
 
 #-----------------------------------------------------------------------------------------------------------------------
+# MAIN BUILDER
 #-----------------------------------------------------------------------------------------------------------------------
+
 if __name__=='__main__':
-    JRC_DATAPATH = "/media/moreo/1TB Volume/Datasets/JRC_Acquis_v3"
-    WIKI_DATAPATH = "/media/moreo/1TB Volume/Datasets/Wikipedia/multilingual_docs_JRC_NLTK"
-    RCV1_PATH = '/media/moreo/1TB Volume/Datasets/RCV1-v2/unprocessed_corpus'
-    RCV2_PATH = '/media/moreo/1TB Volume/Datasets/RCV2'
-    langs = lang_set['JRC_NLTK']
-    # rcv1_leave_topics = fetch_topic_hierarchy("/media/moreo/1TB Volume/Datasets/RCV1-v2/rcv1.topics.hier.orig",
-    #                                           topics='leaves')
+    import sys
 
-    # prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
-    #                      train_for_lang=1000,
-    #                      test_for_lang=1000,
-    #                      max_wiki=0, run='X')
-    # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006],
-    #                      cat_policy='all', most_common_cat=300, max_wiki=0, run='X')
-    #
-    # sys.exit()
+    assert len(sys.argv) == 5, "wrong number of arguments; required: " \
+                               "<JRC_PATH> <RCV1_PATH> <RCV2_PATH> <WIKI_PATH> "
+
+    JRC_DATAPATH = sys.argv[1] # "../Datasets/JRC_Acquis_v3"
+    RCV1_PATH = sys.argv[2] #'../Datasets/RCV1-v2/unprocessed_corpus'
+    RCV2_PATH = sys.argv[3] #'../Datasets/RCV2'
+    WIKI_DATAPATH = sys.argv[4] #"../Datasets/Wikipedia/multilingual_docs_JRC_NLTK"
+
+    langs = lang_set['JRC_NLTK']
+    max_wiki = 5000
 
     for run in range(0,10):
-        # print('Building JRC-Acquis datasets...')
-        # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006],
-        #                      cat_policy='leaves', most_common_cat=300, single_fragment=True, run=run)
-        # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1958, 2006)), test_years=[2006], cat_policy='all', most_common_cat=300, run=run)
-        # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1986, 2006)), test_years=[2006], cat_policy='broadest')
-        # prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs, train_years=list(range(1986, 2006)), test_years=[2006], cat_policy='all')
+        print('Building JRC-Acquis datasets run', run)
+        prepare_jrc_datasets(JRC_DATAPATH, WIKI_DATAPATH, langs,
+                             train_years=list(range(1958, 2006)), test_years=[2006], max_wiki=max_wiki,
+                             cat_policy='all', most_common_cat=300, run=run)
 
-        print('Building RCV1-v2/2 datasets run',run)
-        # prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
-        #                      train_for_lang=1000,
-        #                      test_for_lang=1000,
-        #                      max_wiki=5000,
-        #                      single_fragment_for=rcv1_leave_topics, run=run)
-        # prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
-        #                      train_for_lang=1000,
-        #                      test_for_lang=1000,
-        #                      max_wiki=5000, run=run)
-        datasetpath = join(RCV2_PATH,'rcv1-2_nltk_trByLang1000_teByLang1000_processed_run{}.pickle'.format(run))
-        outpath = join(RCV2_PATH, 'rcv1-2_doclist_trByLang1000_teByLang1000_processed_run{}.pickle'.format(run))
-        #retrieve_rcv_documents_from_dataset(datasetpath, RCV1_PATH, RCV2_PATH, outpath)
+        print('Building RCV1-v2/2 datasets run', run)
+        prepare_rcv_datasets(RCV2_PATH, RCV1_PATH, RCV2_PATH, WIKI_DATAPATH, RCV2_LANGS_WITH_NLTK_STEMMING + ['en'],
+                             train_for_lang=1000, test_for_lang=1000, max_wiki=max_wiki, run=run)
 
-        datasetpath = join(JRC_DATAPATH, 'jrc_nltk_1958-2005vs2006_all_top300_noparallel_processed_run{}.pickle'.format(run))
-        outpath = join(JRC_DATAPATH, 'jrc_doclist_1958-2005vs2006_all_top300_noparallel_processed_run{}.pickle'.format(run))
-        retrieve_jrc_documents_from_dataset(datasetpath, JRC_DATAPATH, train_years=list(range(1958, 2006)), test_years=[2006], cat_policy='all', most_common_cat=300, outpath=outpath)
+        # uncomment this code if you want to retrieve the original documents to generate the data splits for PLE
+        # (make sure you have not modified the above parameters, or adapt the following paths accordingly...)
+        # datasetpath = join(RCV2_PATH,'rcv1-2_nltk_trByLang1000_teByLang1000_processed_run{}.pickle'.format(run))
+        # outpath = datasetpath.replace('_nltk_','_doclist_')
+        # retrieve_rcv_documents_from_dataset(datasetpath, RCV1_PATH, RCV2_PATH, outpath)
+
+        # datasetpath = join(JRC_DATAPATH, 'jrc_nltk_1958-2005vs2006_all_top300_noparallel_processed_run{}.pickle'.format(run))
+        # outpath = datasetpath.replace('_nltk_', '_doclist_')
+        # retrieve_jrc_documents_from_dataset(datasetpath, JRC_DATAPATH, train_years=list(range(1958, 2006)), test_years=[2006], cat_policy='all', most_common_cat=300, outpath=outpath)
 
 
-    #print('Building Reuters-21578 dataset...')
-    #prepare_reuters21578(preprocess=False)
-    #prepare_reuters21578(preprocess=True)
 

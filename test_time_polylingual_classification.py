@@ -1,3 +1,5 @@
+from sklearn.svm import SVC
+
 import util.disable_sklearn_warnings
 import os,sys
 from dataset_builder import MultilingualDataset

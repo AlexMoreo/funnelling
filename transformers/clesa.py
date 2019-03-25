@@ -1,12 +1,11 @@
 import numpy as np
 import sklearn
-import numpy as np
-from scipy import stats
-from scipy.spatial.distance import cdist
 from sklearn.externals.joblib import Parallel, delayed
 
 class ESA(object):
-
+    """
+    Implementation of Explicit Sematic Analysis (ESA) in its mono-lingual version, as a transformer
+    """
     supported_similarity = ['dot', 'cosine']
 
     def __init__(self, similarity='dot', centered=False, post=None):
@@ -64,8 +63,12 @@ class ESA(object):
         return self.W.shape[0]
 
 
-class CLESA(ESA):
 
+class CLESA(ESA):
+    """
+    Implementation of Cross-Lingual Explicit Sematic Analysis (ESA) as a transformer
+    """
+    
     def __init__(self, similarity='dot', centered=False, post=False, n_jobs=-1):
         super(CLESA, self).__init__(similarity, centered, post)
         self.lESA = None

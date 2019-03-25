@@ -1,14 +1,11 @@
 import numpy as np
-from scipy.spatial.distance import cdist
 from sklearn.preprocessing import normalize
 from scipy.sparse import csr_matrix, issparse
 from scipy.spatial.distance import cosine
 import operator
 import functools
 import math, sys
-import time
 from sklearn.externals.joblib import Parallel, delayed
-
 
 
 class DistributionalCorrespondenceIndexing:

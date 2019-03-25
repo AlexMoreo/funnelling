@@ -51,5 +51,3 @@ def _create_random_index_dictionary(shape, k, normalized=False, format='csr', po
         ri_dict = csr_matrix(ri_dict)
     return ri_dict
 
-if __name__=='__main__':
-    _create_random_index_dictionary((15000,2000), k=2, format='np')

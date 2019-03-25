@@ -2,13 +2,10 @@ import util.disable_sklearn_warnings
 from sklearn.svm import SVC
 import os,sys
 from dataset_builder import MultilingualDataset
-from feature_selection.round_robin import RoundRobin
 from learning.learners import *
 from util.evaluation import *
 from optparse import OptionParser
 from util.results import PolylingualClassificationResults
-from sklearn.linear_model import LogisticRegression
-from sklearn.naive_bayes import MultinomialNB
 from util.file import exists
 import pickle
 

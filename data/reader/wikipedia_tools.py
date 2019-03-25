@@ -1,15 +1,10 @@
 from __future__ import print_function
 import ijson
 import os, sys
-
-from seaborn.external.husl import max_chroma
-
 sys.path.append("/home/moreo/CLESA/cl-esa-p")
 from os.path import join
 from bz2 import BZ2File
-from ijson.common import parse
 from ijson.common import ObjectBuilder
-from ijson.common import items
 import pickle
 from util.file import list_dirs, list_files, makedirs_if_not_exist
 from itertools import islice
@@ -109,74 +104,7 @@ def extract_multilingual_documents(inv_dict, langs, text_path, out_path):
             if not re.match('[A-Za-z]+', title):
                 print("Title <%s> for lang <%s> not in dictionary" % (title, lang))
 
-"""
-# too slow...
-def extract_multilingual_titles_from_json(data_dir, langs, policy="IN_ALL_LANGS", return_both=True):
-    json_file = "latest-all.json.bz2"  # in https://dumps.wikimedia.org/wikidatawiki/entities/latest-all.json.bz2
-    latest_all_json_file = join(data_dir,json_file)
 
-    if policy not in policies:
-        raise ValueError("Policy %s not supported." % policy)
-    print("extracting multilingual titles with policy %s (%s)" % (policy,' '.join(langs)))
-
-    lang_prefix = list(langs)
-    lang_prefix.sort()
-    pickle_prefix = "extraction_" + "_".join(lang_prefix) + "." + policy
-    pickle_dict = join(data_dir, pickle_prefix+".multi_dict.pickle")
-    pickle_invdict = join(data_dir, pickle_prefix+".multi_invdict.pickle")
-    if os.path.exists(pickle_invdict):
-        if return_both and os.path.exists(pickle_dict):
-            print("Pickled files found in %s. Loading both (direct and inverse dictionaries)." % data_dir)
-            return pickle.load(open(pickle_dict, 'rb')), pickle.load(open(pickle_invdict, 'rb'))
-        elif return_both==False:
-            print("Pickled file found in %s. Loading inverse dictionary only." % pickle_invdict)
-            return pickle.load(open(pickle_invdict, 'rb'))
-
-    multiling_titles = {}
-    inv_dict = {lang:{} for lang in langs}
-
-    def process_entry(last, fo):
-        id = last["id"]
-        if id in multiling_titles:
-            raise ValueError("id <%s> already indexed" % id)
-
-        titles = None
-        if policy == "IN_ALL_LANGS" and langs.issubset(last["labels"].keys()):
-            titles = {lang: last["labels"][lang]["value"] for lang in langs}
-        elif policy == "IN_ANY_LANG":
-            titles = {lang: last["labels"][lang]["value"] for lang in langs if lang in last["labels"]}
-
-        if titles:
-            multiling_titles[id] = titles
-            for lang, title in titles.items():
-                if title in inv_dict[lang]:
-                    inv_dict[lang][title].append(id)
-                inv_dict[lang][title] = [id]
-            fo.write((id+'\t'+'\t'.join([lang+':'+multiling_titles[id][lang] for lang in titles.keys()])+'\n').encode('utf-8'))
-
-    _open = BZ2File if latest_all_json_file.endswith(".bz2") else open
-    with _open(latest_all_json_file, 'r', buffering=1024*1024*16) as fi, \
-            open(join(data_dir,pickle_prefix+".simple.txt"),'w') as fo:
-        builder = ObjectBuilder()
-        completed = 0
-        for event, value in ijson.basic_parse(fi, buf_size=1024*1024*16):
-             builder.event(event, value)
-             if len(builder.value)>1:
-                process_entry(builder.value.pop(0), fo)
-                completed += 1
-                print("\rCompleted %d\ttitles %d" % (completed,len(multiling_titles)), end="")
-        print("")
-
-        #process the last entry
-        process_entry(builder.value.pop(0))
-
-        print("Pickling dictionaries in %s" % data_dir)
-        pickle.dump(multiling_titles, open(pickle_dict,'wb'), pickle.HIGHEST_PROTOCOL)
-        pickle.dump(inv_dict, open(pickle_invdict, 'wb'), pickle.HIGHEST_PROTOCOL)
-        print("Done")
-
-    return (multiling_titles, inv_dict) if return_both else inv_dict
-"""
 
 def extract_multilingual_titles_from_simplefile(data_dir, filename, langs, policy="IN_ALL_LANGS", return_both=True):
     simplified_file = join(data_dir,filename)
@@ -284,6 +212,8 @@ def simplify_json_file(data_dir, langs, policy="IN_ALL_LANGS", json_file = "late
         #process the last entry
         process_entry(builder.value.pop(0))
 
+    return simple_titles_path
+
 """
 Reads all multi-lingual documents in a folder (see wikipedia_tools.py to generate them) and generates, for each of the
 specified languages, a list contanining all its documents, so that the i-th element of any list refers to the language-
@@ -362,33 +292,14 @@ def random_wiki_sample(l_wiki, max_documents):
 
 if __name__ == "__main__":
 
-    storage_path = "/media/moreo/1TB Volume/Datasets/Multilingual/Wikipedia"
-    #storage_path = "/home/data/wikipedia"
-    #storage_path = "/Users/moreo/cl-esa-p/storage"
+    wikipedia_home = "../Datasets/Wikipedia"
 
-
-    #from data.languages import JRC_LANGS_WITH_NLTK_STEMMING as langs
-    from data.languages import FIVE_LANGS as langs
-    #from jrcacquis_reader import LANGS as langs
+    from data.languages import JRC_LANGS_WITH_NLTK_STEMMING as langs
     langs = frozenset(langs)
 
-    #simplify_multilingual_titles(storage_path, langs, policy="IN_ANY_LANG")
-    #_, inv_dict = extract_multilingual_titles_from_simplefile(storage_path,
-    #           'extraction_da_de_en_es_fi_fr_hu_it_nl_pt_ro_sv.IN_ANY_LANG.simple.bz2', langs, policy='IN_ALL_LANGS')
-
-    # wikipedia_home = "/home/data/wikipedia"
-    wikipedia_home = "/media/moreo/1TB Volume/Datasets/Multilingual/Wikipedia"
-    #storage_dir = '/home/moreo/CLESA/cl-esa-p/storage/'
-    pickle_name = 'extraction_de_en_es_fr_it.IN_ALL_LANGS.multi_invdict.pickle'
-    print('Pickle load of %s' % join(wikipedia_home, pickle_name))
-    inv_dict = pickle.load(open(join(wikipedia_home, pickle_name), 'rb'))
-
+    simple_titles_path = simplify_json_file(wikipedia_home, langs, policy="IN_ALL_LANGS", json_file="latest-all.json.bz2")
+    _, inv_dict = extract_multilingual_titles_from_simplefile(wikipedia_home, simple_titles_path, langs, policy='IN_ALL_LANGS')
     extract_multilingual_documents(inv_dict, langs, join(wikipedia_home,'text'),
-                                   out_path=join(wikipedia_home, 'multilingual_docs_FIVE_LANGS'))
+                                   out_path=join(wikipedia_home, 'multilingual_docs_JRC_NLTK'))
 
-    #langs = ["en", "it", "es"]
-    #wiki_multi_path = join(storage_path, "multilingual_docs")
 
-    #m_docs = fetch_wikipedia_multilingual(wiki_multi_path, langs, min_words=100)
-
-    #print("Read % documents" % len(m_docs[langs[0]]))

@@ -66,77 +66,12 @@ class RCV_Document:
         self.text = text
         self.categories = categories
 
+
 class ExpectedLanguageException(Exception): pass
 class IDRangeException(Exception): pass
 
-# def fetch_RCV1_processed(data_path=None, split='all'):
-#
-#     def load_doc_cat_file(path):
-#         doc_labels = {}
-#         labels = set()
-#         for line in gzip.open(join(path, rcv1_doc_cats_data_gz), 'rt'):
-#             cat, id, _ = line.split()
-#             if id not in doc_labels:
-#                 doc_labels[id] = []
-#             doc_labels[id].append(cat)
-#             labels.add(cat)
-#         return doc_labels, list(labels)
-#
-#     def parse_documents(path, files):
-#         if isinstance(files, str):
-#             files = [files]
-#         request = []
-#         doc_buffer = []
-#         for file in files:
-#             for line in gzip.open(join(path, file), 'rt'):
-#                 line = line.strip()
-#                 if line.startswith('.I'):
-#                     id = line.split()[1]
-#                 elif line.startswith('.W'):
-#                     doc_buffer = []
-#                 elif line:
-#                     doc_buffer.append(line)
-#                 else:
-#                     if doc_buffer:
-#                         request.append(RCV_Document(id, text=' '.join(doc_buffer), categories=None, lang='en'))
-#                         print('\r[{}] documents read {}'.format(path + '/' + file, len(request)), end='')
-#         print('\n')
-#         return request
-#
-#     assert split in ['train','test','test0','test1','test2','test3','all'], 'unexpected <split> request'
-#
-#     if not data_path:
-#         data_path = get_data_home()
-#
-#     if split=='train':
-#         target_files = rcv1_train_data_gz
-#     elif split.startswith('test'):
-#         if split == 'test':
-#             target_files = rcv1_test_data_gz
-#         else:
-#             target_files = [rcv1_test_data_gz[int(split[-1])]]
-#     else:
-#         target_files = rcv1_train_data_gz + rcv1_test_data_gz
-#
-#     for data_file in target_files + [rcv1_doc_cats_data_gz]:
-#         download_file_if_not_exists(url=join(RCV1PROC_BASE_URL,data_file), archive_path=join(data_path, data_file))
-#
-#     print('parsing document-labels assignment')
-#     doc_labels, labels = load_doc_cat_file(data_path)
-#
-#     print('parsing documents')
-#     request = parse_documents(data_path, target_files)
-#
-#     print('assigning labels to documents')
-#     for doc in request:
-#         doc.categories = doc_labels[doc.id]
-#
-#     return request, labels
-
-
 
 nwords = []
-
 
 def parse_document(xml_content, assert_lang=None, valid_id_range=None):
     root = ET.fromstring(xml_content)
@@ -168,15 +103,11 @@ def parse_document(xml_content, assert_lang=None, valid_id_range=None):
     text_length = len(text.split())
     global nwords
     nwords.append(text_length)
-    # if text_length < min_words:
-    #     raise IDRangeException
-
-
 
     return RCV_Document(id=doc_id, text=text, categories=doc_categories, date=doc_date, lang=assert_lang)
 
-def fetch_RCV1(data_path, split='all'):
 
+def fetch_RCV1(data_path, split='all'):
 
     assert split in ['train', 'test', 'all'], 'split should be "train", "test", or "all"'
 
@@ -292,36 +223,3 @@ def fetch_topic_hierarchy(path, topics='all'):
         return list(childs.difference(parents))
 
 
-if __name__=='__main__':
-
-    RCV1PROC_PATH = '/media/moreo/1TB Volume/Datasets/RCV1-v2/processed_corpus'
-    RCV1_PATH = '/media/moreo/1TB Volume/Datasets/RCV1-v2/unprocessed_corpus'
-    RCV2_PATH = '/media/moreo/1TB Volume/Datasets/RCV2'
-
-    #rcv1_train, labels1 = fetch_RCV1_processed(RCV1PROC_PATH, split='train')
-    # rcv1_train, labels1 = fetch_RCV1(RCV1_PATH, split='all')
-    #rcv1_train, labels1 = fetch_RCV1(RCV1_PATH, split='train')
-    # rcv1_test, labels2 = fetch_RCV1(RCV1_PATH, split='test')
-    #rcv2_documents, labels2 = fetch_RCV2(RCV2_PATH, RCV2_LANGS_WITH_NLTK_STEMMING)
-    rcv2_documents, labels2 = fetch_RCV2(RCV2_PATH, RCV2_LANGS)
-
-
-    #print('read {} documents in rcv1-train, and {} labels'.format(len(rcv1_train), len(labels1)))
-    # print('read {} documents in rcv1-test, and {} labels'.format(len(rcv1_test), len(labels2)))
-    print('read {} documents in rcv2, and {} labels'.format(len(rcv2_documents), len(labels2)))
-    sys.exit()
-
-    rcv1_train, labels1 = single_label_fragment(rcv1_train)
-    #rcv2_documents, labels2 = single_label_fragment(rcv2_documents)
-
-    print('read {} documents in rcv1-train, and {} labels'.format(len(rcv1_train), len(labels1)))
-    # print('read {} documents in rcv1-test, and {} labels'.format(len(rcv1_test), len(labels2)))
-    #print('read {} documents in rcv2, and {} labels'.format(len(rcv2_documents), len(labels2)))
-
-    cats = Counter()
-    for d in rcv1_train: cats.update(d.categories)
-    print('RCV1', cats)
-
-    # cats = Counter()
-    # for d in rcv2_documents: cats.update(d.categories)
-    # print('RCV2', cats)
