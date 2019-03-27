@@ -1,7 +1,6 @@
 from __future__ import print_function
 import ijson
 import os, sys
-sys.path.append("/home/moreo/CLESA/cl-esa-p")
 from os.path import join
 from bz2 import BZ2File
 from ijson.common import ObjectBuilder

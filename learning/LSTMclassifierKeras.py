@@ -116,26 +116,11 @@ def PrepareData(lXtr, lYtr, lXte, lYte, mask_unknown=False):
     x_test = data[trdocs:]
     y_test = np.vstack(te_labels)
 
-    # class_prevalences = y_train.sum(0)
-    # high_prev = np.argsort(class_prevalences)[::-1][:10] # 10 most populated classes indices
-    # y_train = y_train[:, high_prev]
-    # y_test = y_test[:, high_prev]
-
-
     nlabels_by_doc = y_train.sum(axis=1)
     print('ave(labels)={:.2f}'.format(np.mean(nlabels_by_doc)))
     print('std(labels)={:.2f}'.format(np.std(nlabels_by_doc)))
     print('max(labels)={:.0f}'.format(np.max(nlabels_by_doc)))
     print('min(labels)={:.0f}'.format(np.min(nlabels_by_doc)))
-
-    # print('svm......................')
-    # svm = OneVsRestClassifier(LinearSVC(), n_jobs=-1)
-    # vec = TfidfVectorizer(sublinear_tf=True)
-    # svm.fit(vec.fit_transform([' '.join([str(x) for x in seq]) for seq in sequences[:trdocs]]), y_train)
-    # # print(svm.best_params_)
-    # yte_ = svm.predict(vec.transform([' '.join([str(x) for x in seq]) for seq in sequences[trdocs:]]))
-    # svmMf1, svmmf1, _, _ = evaluation_metrics(y_test, yte_)
-    # print('\nLinearSVM {:.3f} {:.3f}'.format(svmMf1, svmmf1))
 
     return (x_train, y_train), (x_test, y_test), word_index
 
@@ -198,9 +183,6 @@ def RNN(embedding_matrix, trainable, lstmsize, densesize):
 
     return model
 
-# def ave_embeddings(x, embedding_matrix):
-#     return embedding_matrix[x].sum(1)/(x!=0).sum(-1, keepdims=True)
-
 
 if __name__=='__main__':
     (op, args) = parser.parse_args()
@@ -240,7 +222,6 @@ if __name__=='__main__':
     # reduce_lr_on_plateau = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=10, verbose=0, mode='auto', min_delta=0.0001, cooldown=0, min_lr=0)
     earlystop = EarlyStopping(monitor='val_'+batchf1_keras.__name__, patience=op.patience, restore_best_weights=True, mode='max')
     history = model.fit(x_train, y_train,
-                        # validation_data=(x_test, y_test),
                         validation_split=0.2,
                         epochs=op.nepochs,
                         batch_size=op.batchsize,
@@ -253,7 +234,6 @@ if __name__=='__main__':
 
     print('LSTM-evaluation')
     tinit = time.time()
-    # probs = model.predict([x_test,x_test_ave], batch_size=batch_size)
     probs = model.predict(x_test, batch_size=op.batchsize)
     y_lstm = 1 * (probs > 0.5)
     te_time = time.time()-tinit
@@ -270,7 +250,6 @@ if __name__=='__main__':
         # using the "notest" to show the test time
         results.add_row(result_id, method_config, 'keras-lstm', optimizer, datasetname, '', '', tr_time, lang,
                         macrof1, microf1, macrok, microk, notes=te_time)
-
 
     # import matplotlib.pyplot as plt
     # plt.plot(history.history['loss'])
@@ -291,7 +270,3 @@ if __name__=='__main__':
 
     model.summary()
 
-
-
-    # from keras.utils import plot_model
-    # plot_model(model, to_file='model.png')

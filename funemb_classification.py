@@ -1,6 +1,5 @@
-from sklearn.svm import SVC
-
 import util.disable_sklearn_warnings
+from sklearn.svm import SVC
 import os,sys
 from dataset_builder import MultilingualDataset
 from learning.learners import *
@@ -49,15 +48,15 @@ if __name__=='__main__':
         else:
             meta_parameters = [{'C': [1e3, 1e2, 1e1, 1, 1e-1]}]
         print('Learning Fun(Embedding) Poly-lingual Classifier')
-        classifier = FunnellingEmbedding(first_tier_learner= SVC(kernel='linear', probability=True, cache_size=1000, random_state=1),
-                                         embed_learner = SVC(kernel='linear', probability=True, cache_size=1000, C=10, random_state=1),
-                                         meta_learner = SVC(kernel='rbf', probability=False, cache_size=1000, C=1000, random_state=1),
-                                         wordembeddings_path = op.we_path,
-                                         training_languages = lang_order[:nlangs],
-                                         first_tier_parameters=None,
-                                         embed_parameters = None,
-                                         meta_parameters = meta_parameters,
-                                         n_jobs=-1)
+        classifier = FunnellingEmbeddingPolylingualClassifier(first_tier_learner= SVC(kernel='linear', probability=True, cache_size=1000, random_state=1),
+                                                              embed_learner = SVC(kernel='linear', probability=True, cache_size=1000, C=10, random_state=1),
+                                                              meta_learner = SVC(kernel='rbf', probability=False, cache_size=1000, C=1000, random_state=1),
+                                                              wordembeddings_path = op.we_path,
+                                                              training_languages = lang_order[:nlangs],
+                                                              first_tier_parameters=None,
+                                                              embed_parameters = None,
+                                                              meta_parameters = meta_parameters,
+                                                              n_jobs=-1)
 
         classifier.fit(lXtr, lytr)
         l_eval = evaluate_method(classifier, lXte, lyte)
