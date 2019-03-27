@@ -29,7 +29,7 @@ Among those, CLESA, KCCA, PLE, and PLE-LSTM require the following additional res
 * CLESA: the class [CLESAPolylingualClassifier](./learning/learners.py) requires a processed version of a [Wikipedia dump](https://dumps.wikimedia.org/); see section **Datasets** for more information. 
 * KCCA: the class [KCCAPolylingualClassifier](./learning/learners.py) also requires a processed version of Wikipedia. KCCA is built on top of a wrapper of [pyrcca](https://github.com/gallantlab/pyrcca) 
 from the article [Regularized kernel canonical correlation analysis in Python](https://www.frontiersin.org/articles/10.3389/fninf.2016.00049/full).
-If you intend run KCCA you might first fork the aforementioned project and make it accessible at the root of this project. 
+If you intend to run KCCA you might first fork the aforementioned project and make it accessible at the root of this project. 
 * PLE: the class [PolylingualEmbeddingsClassifier](./learning/learners.py) uses the polylingual embeddings from the article 
 [Word Translation without Parallel Data](https://arxiv.org/abs/1710.04087) which can be downloaded from the [MUSE](https://github.com/facebookresearch/MUSE) repo.
 * PLE-LSTM: is implemented in [LSTMclassifierKeras.py](./learning/LSTMclassifierKeras.py) and requires:
@@ -79,14 +79,14 @@ Please, refer to [RCV1's site](http://www.daviddlewis.com/resources/testcollecti
 
 Once locally available, this script preprocesses the documents, and vectorizes them. 
 10 random splits are generated for experimental purposes. 
-The list of ids we ended up using are accessible (in pickle format) [here](./doc_ids.zip).
+The list of ids we ended up using are accessible (in pickle format) [here](http://hlt.isti.cnr.it/funnelling/).
 
 
 ---
 ## Reproducing the Experiments
 
 Most of the experiments were run using the script [polylingual_classification.py](polylingual_classification.py).
-This script can be run with different command line arguments to run all multilabel experiments (with the exception of PLE-LSTM, see below). 
+This script can be run with different command line arguments to reproduce all multilabel experiments (with the exception of PLE-LSTM, see below). 
 
 Run it with _-h_ or _--help_ to show this help.
 
@@ -131,7 +131,7 @@ Options:
 ```
 
 For example, the following command will produce the results for Fun(TAT) on the first random split 
-of the RCV1/RCV2 dataset optimizing the _C_ parameter of the first-tier SVM classifier.
+of the RCV1/RCV2 dataset optimizing the _C_ parameter of the first-tier SVM classifiers.
 
 ```
 $> python polylingual_classification.py -d "../Datasets/RCV2/rcv1-2_nltk_trByLang1000_teByLang1000_processed_run0.pickle" -o ./results.csv --mode fun-tat --optimc
