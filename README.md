@@ -26,15 +26,7 @@ Poly-lingual Embeddings (PLE and PLE-LSTM),
 and UpperBound.
 Among those, CLESA, KCCA, PLE, and PLE-LSTM require the following additional resources:
 
-* CLESA: the class [CLESAPolylingualClassifier](./learning/learners.py) requires a processed version of a [Wikipedia dump](https://dumps.wikimedia.org/). 
-We adapted the [Wikipedia_Extractor](http://medialab.di.unipi.it/wiki/Wikipedia_Extractor) to extract a comparable
-set of documents for all of the 11 languages involved in our experiments. 
-Technical details and ad-hoc tools might be found in [wikipedia_tools.py](./data/reader/wikipedia_tools.py) (in this repo).
-The toolkit allows:
-    * Simpliying the (huge) json dump file
-    * Processing the json file as a stream and filter out documents not satisfying certain conditions (e.g., do not have a view for all of the specified languages).
-    * Extract clean versions of documents (see the Wikipedia_Extractor for more information)
-    * Create multilingual maps of comparable documents, and pickle them for faster usage.
+* CLESA: the class [CLESAPolylingualClassifier](./learning/learners.py) requires a processed version of a [Wikipedia dump](https://dumps.wikimedia.org/); see section **Datasets** for more information. 
 * KCCA: the class [KCCAPolylingualClassifier](./learning/learners.py) also requires a processed version of Wikipedia. KCCA is built on top of a wrapper of [pyrcca](https://github.com/gallantlab/pyrcca) 
 from the article [Regularized kernel canonical correlation analysis in Python](https://www.frontiersin.org/articles/10.3389/fninf.2016.00049/full).
 If you intend run KCCA you might first fork the aforementioned project and make it accessible at the root of this project. 
@@ -67,16 +59,25 @@ baselines (see section **Baselines**).
 If you are not interested in running CLESA or KCCA, you can simply omit this requirement by setting max_wiki=0 before
 running the script.
 If otherwise, you would have to go through the [documentation](./data/reader/wikipedia_tools.py) which 
-contains some tools and explanations on how to prepare the Wikipedia dump (you might require external tools). 
+contains some tools and explanations on how to prepare the Wikipedia dump (you might require external tools).
+
+We adapted the [Wikipedia_Extractor](http://medialab.di.unipi.it/wiki/Wikipedia_Extractor) to extract a comparable
+set of documents for all of the 11 languages involved in our experiments. 
+Technical details and ad-hoc tools might be found in [wikipedia_tools.py](./data/reader/wikipedia_tools.py) (in this repo).
+The toolkit allows:
+* Simpliying the (huge) json dump file
+* Processing the json file as a stream and filter out documents not satisfying certain conditions (e.g., do not have a view for all of the specified languages).
+* Extract clean versions of documents (see the Wikipedia_Extractor for more information)
+* Create multilingual maps of comparable documents, and pickle them for faster usage. 
  
-These dataset splits are built once for all using the [dataset_builder.py](./dataset_builder.py) script and
+The dataset splits are built once for all using the [dataset_builder.py](./dataset_builder.py) script and
 then pickled for fast subsequent runs.
 JRC-Acquis is automatically donwloaded the first time.
 RCV1/RCV2, despite being public, cannot be downloaded without a formal permission. 
 Please, refer to [RCV1's site](http://www.daviddlewis.com/resources/testcollections/rcv1/) and 
 [RCV2's site](http://trec.nist.gov/data/reuters/reuters.html) before proceeding.
 
-Once locally available, this script preprocesses the documents, and vectorize them. 
+Once locally available, this script preprocesses the documents, and vectorizes them. 
 10 random splits are generated for experimental purposes. 
 The list of ids we ended up using are accessible (in pickle format) [here](./doc_ids.zip).
 
