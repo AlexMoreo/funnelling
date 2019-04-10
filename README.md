@@ -22,18 +22,18 @@ Lightweight Random Indexing (LRI),
 Cross-Lingual Explicit Semantic Analysis (CLESA),
 Kernel Canonical Correlation Analysis (KCCA), 
 Distributional Correspondence Indexing (DCI),
-Poly-lingual Embeddings (PLE and PLE-LSTM), 
+Poly-lingual Embeddings (MLE and MLE-LSTM), 
 and UpperBound.
-Among those, CLESA, KCCA, PLE, and PLE-LSTM require the following additional resources:
+Among those, CLESA, KCCA, MLE, and MLE-LSTM require the following additional resources:
 
 * CLESA: the class [CLESAPolylingualClassifier](./learning/learners.py) requires a processed version of a [Wikipedia dump](https://dumps.wikimedia.org/); see section **Datasets** for more information. 
 * KCCA: the class [KCCAPolylingualClassifier](./learning/learners.py) also requires a processed version of Wikipedia. KCCA is built on top of a wrapper of [pyrcca](https://github.com/gallantlab/pyrcca) 
 from the article [Regularized kernel canonical correlation analysis in Python](https://www.frontiersin.org/articles/10.3389/fninf.2016.00049/full).
 If you intend to run KCCA you might first fork the aforementioned project and make it accessible at the root of this project. 
-* PLE: the class [PolylingualEmbeddingsClassifier](./learning/learners.py) uses the polylingual embeddings from the article 
+* MLE: the class [PolylingualEmbeddingsClassifier](./learning/learners.py) uses the multilingual embeddings from the article 
 [Word Translation without Parallel Data](https://arxiv.org/abs/1710.04087) which can be downloaded from the [MUSE](https://github.com/facebookresearch/MUSE) repo.
-* PLE-LSTM: is implemented in [LSTMclassifierKeras.py](./learning/LSTMclassifierKeras.py) and requires:
-    * The availability of the polylingual embeddings (as in PLE).
+* MLE-LSTM: is implemented in [LSTMclassifierKeras.py](./learning/LSTMclassifierKeras.py) and requires:
+    * The availability of the polylingual embeddings (as in MLE).
     * A [Keras](https://keras.io/) installation.
     
 
