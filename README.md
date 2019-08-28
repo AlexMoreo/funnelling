@@ -7,8 +7,7 @@ the [FunnellingPolylingualClassifier](./learning/learners.py) class, and instant
 _folded_projections=k_ for Fun(KFCV) (with _k>1_ the number of folds) or _folded_projections=1_ for Fun(TAT).
 
 
-This code has been used to produce all experimental results reported in the (_forthcoming_) article. 
-Please, access (_forthcoming link_) for a description of the method, which is not described here.
+This code has been used to produce all experimental results reported in the article "Esuli, A., Moreo, A., & Sebastiani, F. (2019). [Funnelling: A New Ensemble Method for Heterogeneous Transfer Learning and Its Application to Cross-Lingual Text Classification](https://dl.acm.org/citation.cfm?id=3326065). ACM Transactions on Information Systems (TOIS), 37(3), 37.". 
 
 
 ## Baselines
